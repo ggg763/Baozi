@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+*.egg-info/
+
+# 临时文件
+temp/
+*.mp3
+*.wav
+*.log
+
+# 环境变量（如果用了 .env）
+.env
+
+# 用户画像/隐私数据（不要上传真实数据）
+memory.json
+
+# 模型文件（如果很大）
+*.bin
+*.onnx
+*.pt
+*.pth
+
+# IDE
+.vscode/
+.idea/
