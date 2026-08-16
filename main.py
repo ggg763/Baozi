@@ -1,13 +1,21 @@
 """
 main.py - 包子主控程序（本地测试版）
-功能：接收音频文件 → ASR识别 → LLM推理 → TTS合成
+功能：接收音频文件 → ASR识别 → LLM推理 → TTS合成 → 状态机驱动表情动作
+
+用法：
+    python main.py                  # 默认：模拟硬件（FakeTD1601），处理 test.wav
+    python main.py --audio a.wav    # 指定音频文件
+    python main.py --gui            # 启动虚拟机器人窗口（VisualTD1601，Tkinter）
 """
 import os
 import wave
 import time
+import argparse
 from baozis_ear import baozis_ear
 from baozis_mouth import baozis_mouth
 from brain.brain import BaoZiBrain
+from emotion.state_machine import MoodStateMachine
+from robot.hardware_interface import FakeTD1601
 
 # ---------- 初始化新版大脑 ----------
 _PROMPT_FILE = os.path.join(
@@ -26,6 +34,20 @@ def _load_system_prompt() -> str:
         return ""
 
 brain = BaoZiBrain(system_prompt=_load_system_prompt())
+
+def _create_hardware(gui: bool):
+    """
+    创建硬件接口：
+    - gui=True  → VisualTD1601（Tkinter 虚拟窗口）
+    - 否则      → FakeTD1601（打印式模拟，无 GUI 依赖）
+    """
+    if gui:
+        try:
+            from robot.visual_robot import VisualTD1601
+            return VisualTD1601()
+        except Exception as e:
+            print(f"⚠️ 虚拟窗口启动失败，回退到模拟硬件: {e}")
+    return FakeTD1601()
 
 def warmup():
     """
@@ -77,13 +99,15 @@ def warmup():
     elapsed = time.time() - start_time
     print(f"🔥 热身完成！耗时 {elapsed:.1f} 秒")
 
-def process_audio_file(audio_path: str, clear_context: bool = True) -> dict:
+def process_audio_file(audio_path: str, clear_context: bool = True, state_machine: MoodStateMachine = None) -> dict:
     """
     处理单个音频文件，返回完整交互结果。
     
     参数:
         audio_path: 音频文件路径（必须是16kHz单声道WAV格式）
         clear_context: 是否清空对话历史（默认True，新会话）
+        state_machine: 情绪状态机（可选）。传入时会把 LLM 情绪喂给
+            update_interaction()，驱动表情/LED/舵机动作。
     
     返回:
         dict: {
@@ -122,6 +146,10 @@ def process_audio_file(audio_path: str, clear_context: bool = True) -> dict:
     robot_action = brain_result.get("robot_action", {})
     print(f"[包子] {reply} (情感: {emotion}, 指令: {command}, 动作: {robot_action})")
     
+    # 2.5 驱动状态机：表情/LED/舵机随情绪变化
+    if state_machine is not None:
+        state_machine.update_interaction(emotion)
+    
     # 3. 语音合成（嘴巴）
     print("[Main] 正在合成语音...")
     audio_file = baozis_mouth(reply, emotion=emotion)
@@ -137,19 +165,37 @@ def process_audio_file(audio_path: str, clear_context: bool = True) -> dict:
     }
 
 if __name__ == "__main__":
-    # 1. 执行预热
-    warmup()
-    
-    # 2. 然后正常处理用户请求
-    test_audio = "test.wav"
-    if not os.path.exists(test_audio):
-        print(f"错误：找不到测试音频文件 {test_audio}")
-    else:
-        result = process_audio_file(test_audio, clear_context=True)
-        print("\n========== 最终结果 ==========")
-        print(f"用户说: {result['user_text']}")
-        print(f"包子说: {result['reply']}")
-        print(f"情感: {result['emotion']}")
-        print(f"指令: {result['command']}")
-        print(f"动作: {result.get('robot_action')}")
-        print(f"音频文件: {result['audio_file']}")
+    parser = argparse.ArgumentParser(description="包子主控程序")
+    parser.add_argument("--audio", default="test.wav", help="音频文件路径（16kHz单声道WAV）")
+    parser.add_argument("--gui", action="store_true", help="启动虚拟机器人窗口（VisualTD1601）")
+    args = parser.parse_args()
+
+    # 0. 初始化硬件 + 状态机
+    hardware = _create_hardware(gui=args.gui)
+    state_machine = MoodStateMachine(hardware)
+    print("[Main] 状态机已启动。")
+
+    try:
+        # 1. 执行预热
+        warmup()
+        
+        # 2. 然后正常处理用户请求
+        if not os.path.exists(args.audio):
+            print(f"错误：找不到测试音频文件 {args.audio}")
+        else:
+            result = process_audio_file(args.audio, clear_context=True, state_machine=state_machine)
+            print("\n========== 最终结果 ==========")
+            print(f"用户说: {result['user_text']}")
+            print(f"包子说: {result['reply']}")
+            print(f"情感: {result['emotion']}")
+            print(f"指令: {result['command']}")
+            print(f"动作: {result.get('robot_action')}")
+            print(f"音频文件: {result['audio_file']}")
+
+        # 3. GUI 模式：进入窗口主循环（阻塞），可观察状态机随时间的表情变化
+        if args.gui:
+            print("[Main] 虚拟窗口运行中，关闭窗口后退出...")
+            hardware.run()
+    finally:
+        state_machine.shutdown()
+        print("[Main] 状态机已关闭。")
