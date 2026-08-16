@@ -4,6 +4,7 @@ baozis_ear.py - 包子的耳朵
 """
 
 import re
+import torch
 from funasr import AutoModel
 
 # 全局变量：模型只加载一次
@@ -17,7 +18,8 @@ def _get_model():
         _MODEL = AutoModel(
             model="iic/SenseVoiceSmall",
             trust_remote_code=True,
-            device="cuda:0"  # 如果有 GPU 可以取消注释
+            device = "cuda:0" if torch.cuda.is_available() else "cpu",
+            disable_update=True
         )
         print("✅ 包子已经准备好听你说话啦！")
     return _MODEL
