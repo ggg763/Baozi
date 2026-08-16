@@ -26,31 +26,6 @@ import time
 from typing import List, Dict
 
 
-def call_ollama(
-    messages: List[Dict[str, str]],
-    *,
-    url: str = "http://localhost:11434/api/chat",
-    model: str = "qwen2.5:3b",
-    temperature: float = 0.7,
-    top_p: float = 0.9,
-    timeout: int = 30,
-) -> str:
-    """Compatibility entry point for the legacy brain's Ollama request.
-
-    ``baozis_brain.py`` does not call this yet.  Keeping this small function
-    ready now lets the next change replace only the request implementation,
-    while preserving the legacy configuration and its ``str`` return value.
-    """
-    client = OllamaClient(
-        url=url,
-        model=model,
-        temperature=temperature,
-        top_p=top_p,
-        timeout=timeout,
-    )
-    return client.chat(messages)
-
-
 class OllamaClient:
 
     def __init__(

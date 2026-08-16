@@ -28,31 +28,7 @@ json_parser.py
 
 import json
 import re
-from typing import Dict, Tuple
-
-
-def parse_output(raw: str) -> Tuple[str, str, str]:
-    """Parse the stable brain's response without changing its behaviour.
-
-    This is deliberately a small extraction of ``baozis_brain._parse_output``.
-    Keeping the fallback values and the "last JSON object wins" rule identical
-    makes this module safe to introduce while the legacy brain remains active.
-    """
-    json_pattern = r"\{[^{}]*\}"
-    matches = list(re.finditer(json_pattern, raw))
-    if matches:
-        last_json_str = matches[-1].group()
-        try:
-            data = json.loads(last_json_str)
-            reply = data.get("reply", raw.replace(last_json_str, "").strip())
-            emotion = data.get("emotion", "neutral")
-            command = data.get("command", "NONE")
-            if not reply:
-                reply = raw.replace(last_json_str, "").strip()
-            return reply, emotion, command
-        except json.JSONDecodeError:
-            pass
-    return raw, "neutral", "NONE"
+from typing import Dict
 
 
 # 包子允许的情绪列表

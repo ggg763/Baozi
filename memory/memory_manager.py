@@ -73,6 +73,12 @@ class MemoryManager:
         ] = []
 
 
+        # 并发保护：后台压缩线程与主线程共享
+        # conversation_history 与 user_profile
+
+        self._lock = threading.RLock()
+
+
         # 用户长期画像
 
         self.user_profile = ""
@@ -114,18 +120,19 @@ class MemoryManager:
                 data = json.load(f)
 
 
-            self.user_profile = data.get(
-                "profile",
-                ""
-            )
+            with self._lock:
 
-
-            if self.user_profile:
-
-                print(
-                    f"🧠 已加载长期记忆: "
-                    f"{self.user_profile[:30]}..."
+                self.user_profile = data.get(
+                    "profile",
+                    ""
                 )
+
+                if self.user_profile:
+
+                    print(
+                        f"🧠 已加载长期记忆: "
+                        f"{self.user_profile[:30]}..."
+                    )
 
 
         except Exception as e:
@@ -144,6 +151,11 @@ class MemoryManager:
 
         try:
 
+            with self._lock:
+
+                profile = self.user_profile
+
+
             with open(
                 self.memory_file,
                 "w",
@@ -153,7 +165,7 @@ class MemoryManager:
                 json.dump(
                     {
                         "profile":
-                            self.user_profile
+                            profile
                     },
                     f,
                     ensure_ascii=False,
@@ -171,7 +183,9 @@ class MemoryManager:
 
     def get_profile(self):
 
-        return self.user_profile
+        with self._lock:
+
+            return self.user_profile
 
 
 
@@ -180,7 +194,9 @@ class MemoryManager:
         profile: str
     ):
 
-        self.user_profile = profile
+        with self._lock:
+
+            self.user_profile = profile
 
         self.save()
 
@@ -197,19 +213,23 @@ class MemoryManager:
         content: str
     ):
 
-        self.conversation_history.append(
-            {
-                "role": role,
-                "content": content
-            }
-        )
+        with self._lock:
+
+            self.conversation_history.append(
+                {
+                    "role": role,
+                    "content": content
+                }
+            )
 
 
     def get_history(self):
 
-        return self.conversation_history[
-            -self.max_history * 2:
-        ]
+        with self._lock:
+
+            return self.conversation_history[
+                -self.max_history * 2:
+            ]
 
 
 
@@ -220,7 +240,9 @@ class MemoryManager:
         保留长期画像
         """
 
-        self.conversation_history = []
+        with self._lock:
+
+            self.conversation_history = []
 
         print(
             "🗑️ 短期记忆已清空，长期记忆保留"
@@ -258,9 +280,11 @@ class MemoryManager:
 
     def need_compress(self):
 
-        return len(
-            self.conversation_history
-        ) > self.max_history * 2
+        with self._lock:
+
+            return len(
+                self.conversation_history
+            ) > self.max_history * 2
 
 
 
@@ -295,23 +319,21 @@ class MemoryManager:
 
         try:
 
-            if len(
-                self.conversation_history
-            ) < 10:
+            with self._lock:
 
-                return
+                if len(
+                    self.conversation_history
+                ) < 10:
 
-
-
-            history_text = json.dumps(
-                self.conversation_history,
-                ensure_ascii=False
-            )
+                    return
 
 
-            # Keep this prompt aligned with the stable brain until the module
-            # is actually connected, so memory content does not change during
-            # the extraction itself.
+                history_text = json.dumps(
+                    self.conversation_history,
+                    ensure_ascii=False
+                )
+
+
             prompt = f"""
 请阅读以下我和用户的对话历史，提取出关于该用户的**核心性格特征、偏好、习惯和长期情感模式**。
 请用不超过150字的第三人称中文总结（例如：“用户喜欢科技话题，情绪容易焦虑，需要鼓励...”）。
@@ -383,7 +405,16 @@ class MemoryManager:
                 if len(summary) > 10:
 
 
-                    self.user_profile = summary
+                    with self._lock:
+
+                        self.user_profile = summary
+
+                        # 清空短期历史，只保留最近两条消息。
+
+                        self.conversation_history = (
+                            self.conversation_history[-2:]
+                        )
+
 
                     self.save()
 
@@ -393,14 +424,6 @@ class MemoryManager:
                     )
 
                     print(summary)
-
-
-
-                    # 与稳定版一致：清空短期历史，只保留最近两条消息。
-
-                    self.conversation_history = (
-                        self.conversation_history[-2:]
-                    )
 
 
 
