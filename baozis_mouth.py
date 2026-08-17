@@ -1,5 +1,6 @@
 import asyncio
 import edge_tts
+import hashlib
 import os
 
 # ---------- 配置 ----------
@@ -27,6 +28,7 @@ EMOTION_PITCH = {
 
 async def _tts_async(text: str, voice: str = DEFAULT_VOICE, rate: str = "+0%", pitch: str = "0Hz") -> str:
     """异步生成 TTS 音频，返回输出文件路径"""
+    text_hash = hashlib.md5(text.encode('utf-8')).hexdigest()
     output_file = os.path.join(OUTPUT_DIR, f"output_{hash(text)}.mp3")
     if os.path.exists(output_file):
         return output_file
