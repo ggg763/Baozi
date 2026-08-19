@@ -26,6 +26,11 @@ memory.json
 *.pt
 *.pth
 
+# 编译产物（TD1601 C 代码）
+*.exe
+*.o
+*.out
+
 # IDE
 .vscode/
 .idea/
