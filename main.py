@@ -119,8 +119,7 @@ def process_audio_file(audio_path: str, clear_context: bool = True, state_machin
             "user_text": 识别出的用户文本,
             "reply": 包子的回复文本,
             "emotion": 情感标签,
-            "command": 控制指令,
-            "robot_action": 结构化机器人动作（新版大脑输出）,
+            "intent": 用户意图,
             "audio_file": 生成的MP3文件路径
         }
     """
@@ -137,7 +136,7 @@ def process_audio_file(audio_path: str, clear_context: bool = True, state_machin
             "user_text": "",
             "reply": "我没听清你说什么。",
             "emotion": "neutral",
-            "command": "NONE",
+            "intent": "none",
             "audio_file": None
         }
     print(f"[用户] {user_text}")
@@ -147,9 +146,8 @@ def process_audio_file(audio_path: str, clear_context: bool = True, state_machin
     brain_result = brain.chat(user_text)
     reply = brain_result["reply"]
     emotion = brain_result["emotion"]
-    command = brain_result["command"]
-    robot_action = brain_result.get("robot_action", {})
-    print(f"[包子] {reply} (情感: {emotion}, 指令: {command}, 动作: {robot_action})")
+    intent = brain_result.get("intent", "none")
+    print(f"[包子] {reply} (情感: {emotion}, 意图: {intent})")
     
     # 2.5 驱动状态机：表情/LED/舵机随情绪变化（本机虚拟/模拟）
     if state_machine is not None:
@@ -168,8 +166,7 @@ def process_audio_file(audio_path: str, clear_context: bool = True, state_machin
         "user_text": user_text,
         "reply": reply,
         "emotion": emotion,
-        "command": command,
-        "robot_action": robot_action,
+        "intent": intent,
         "audio_file": audio_file
     }
 
@@ -199,8 +196,7 @@ if __name__ == "__main__":
             print(f"用户说: {result['user_text']}")
             print(f"包子说: {result['reply']}")
             print(f"情感: {result['emotion']}")
-            print(f"指令: {result['command']}")
-            print(f"动作: {result.get('robot_action')}")
+            print(f"意图: {result.get('intent')}")
             print(f"音频文件: {result['audio_file']}")
 
         # 3. GUI 模式：进入窗口主循环（阻塞），可观察状态机随时间的表情变化

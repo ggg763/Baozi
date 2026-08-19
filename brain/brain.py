@@ -38,19 +38,19 @@ JsonParser
 
 EmotionManager
 
- ↓
-
-CommandMapper
-
 
 返回:
 
 {
  reply:"",
  emotion:"",
- command:"",
- robot_action:""
+ intent:""
 }
+
+说明：
+
+- 只输出语义（回复文本/情绪/意图），不输出任何动作指令；
+- 动作（表情/舵机/LED）由 TD1601 行为层自主决策。
 
 """
 
@@ -65,8 +65,6 @@ from brain.json_parser import JsonParser
 from memory.memory_manager import MemoryManager
 
 from emotion.emotion_manager import EmotionManager
-
-from robot.command_mapper import CommandMapper
 
 
 
@@ -100,12 +98,6 @@ class BaoZiBrain:
         # 情绪
 
         self.emotion = EmotionManager()
-
-
-
-        # 动作
-
-        self.command = CommandMapper()
 
 
 
@@ -162,14 +154,8 @@ class BaoZiBrain:
                 "emotion":
                     "neutral",
 
-                "command":
-                    "NONE",
-
-                "robot_action":
-                    {
-                        "type":
-                            "none"
-                    }
+                "intent":
+                    "none"
 
             }
 
@@ -224,18 +210,6 @@ class BaoZiBrain:
 
 
         # 6.
-        # 转换动作
-
-
-        action = self.command.map(
-
-            result["command"]
-
-        )
-
-
-
-        # 7.
         # 自动压缩
 
 
@@ -260,15 +234,9 @@ class BaoZiBrain:
 
 
 
-            "command":
+            "intent":
 
-                result["command"],
-
-
-
-            "robot_action":
-
-                action
+                result["intent"]
 
         }
 

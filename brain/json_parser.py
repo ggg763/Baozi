@@ -13,7 +13,7 @@ json_parser.py
     {
         "reply": str,
         "emotion": str,
-        "command": str
+        "intent": str
     }
 
 
@@ -31,7 +31,7 @@ import re
 from typing import Dict
 
 
-# 包子允许的情绪列表
+# 包子允许的情绪列表（LLM 只能输出这 6 种）
 VALID_EMOTIONS = {
     "happy",
     "sad",
@@ -39,6 +39,18 @@ VALID_EMOTIONS = {
     "surprised",
     "loving",
     "neutral"
+}
+
+# 允许的意图列表
+VALID_INTENTS = {
+    "greeting",
+    "question",
+    "chat",
+    "command",
+    "thanks",
+    "goodbye",
+    "unknown",
+    "none"
 }
 
 
@@ -67,7 +79,7 @@ class JsonParser:
         {
             "reply":"",
             "emotion":"",
-            "command":""
+            "intent":""
         }
 
         """
@@ -106,7 +118,7 @@ class JsonParser:
         return {
             "reply": raw.strip(),
             "emotion": "neutral",
-            "command": "NONE"
+            "intent": "none"
         }
 
 
@@ -150,7 +162,7 @@ class JsonParser:
         {
           "reply":"你好",
           "emotion":"happy",
-          "command":"NONE"
+          "intent":"chat"
         }
 
         """
@@ -220,10 +232,12 @@ class JsonParser:
         )
 
 
-        command = data.get(
-            "command",
-            "NONE"
-        )
+        intent = str(
+            data.get(
+                "intent",
+                "none"
+            )
+        ).strip().lower()
 
 
         # 防止模型输出奇怪emotion
@@ -233,11 +247,11 @@ class JsonParser:
             emotion = "neutral"
 
 
+        # 意图白名单：非法值归一到 none
 
-        if not command:
+        if intent not in VALID_INTENTS:
 
-            command = "NONE"
-
+            intent = "none"
 
 
         if not reply:
@@ -252,7 +266,7 @@ class JsonParser:
 
             "emotion": emotion,
 
-            "command": command
+            "intent": intent
 
         }
 
@@ -269,7 +283,7 @@ class JsonParser:
             "emotion":
                 "neutral",
 
-            "command":
-                "NONE"
+            "intent":
+                "none"
 
         }

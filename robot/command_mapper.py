@@ -1,6 +1,18 @@
 """
 command_mapper.py
 
+⚠️ 已停用（架构调整 v1.0）
+
+本模块原负责"LLM 动作指令 → 标准动作字典"的映射，
+自架构调整后 PC 端不再下发动作指令（LLM 只输出
+reply/emotion/intent），动作决策已迁移至 TD1601 行为层
+（td1601_code/src/behavior.c + motion.c）。
+
+保留本文件仅作历史参考，主链路（brain/main）不再引用。
+
+---
+（原职责说明）
+
 包子机器人动作映射模块
 
 

@@ -23,7 +23,8 @@ brain.clear_history()
 # 第一轮
 r1 = brain.chat("你好呀，包子！")
 print(r1)
-assert "reply" in r1 and "emotion" in r1 and "command" in r1 and "robot_action" in r1
+assert "reply" in r1 and "emotion" in r1 and "intent" in r1
+assert "command" not in r1 and "robot_action" not in r1, "LLM 不应再输出动作指令"
 
 # 第二轮（验证历史记忆生效）
 r2 = brain.chat("今天天气如何")
