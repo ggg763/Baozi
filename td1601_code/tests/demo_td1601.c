@@ -48,35 +48,35 @@ static void feed_line(const char *line)
 {
     size_t n = strlen(line);
     size_t i;
-    printf("\n=== PC 下发: %s", line);
+    printf("\n=== PC sends: %s", line);
     for (i = 0; i < n; i++) {
         UART_OnByteReceived((uint8_t)line[i]);
     }
-    /* 互动后推进一小段时间并驱动 FSM 节拍 */
+    /* advance clock a bit and drive FSM tick */
     s_now_ms += 500U;
     Emotion_Tick(s_now_ms);
-    printf(">>> 当前情绪: %s\n", emo_name(Emotion_Get()));
+    printf(">>> current emotion: %s\n", emo_name(Emotion_Get()));
 }
 
 static void advance_ms(uint32_t ms, const char *note)
 {
-    printf("\n=== %s（推进 %u ms）===\n", note, (unsigned)ms);
+    printf("\n=== %s (advance %u ms) ===\n", note, (unsigned)ms);
     s_now_ms += ms;
     Emotion_Tick(s_now_ms);
-    printf(">>> 当前情绪: %s\n", emo_name(Emotion_Get()));
+    printf(">>> current emotion: %s\n", emo_name(Emotion_Get()));
 }
 
 /* ---------- 主演示 ---------- */
 int main(void)
 {
-    printf("========== BaoZi TD1601 行为层演示 ==========\n\n");
+    printf("========== BaoZi TD1601 Behavior Demo ==========\n\n");
 
-    /* 初始化：行为层内部初始化 Screen/LED/Servo 并复位姿态 */
+    /* init: Behavior layer inits Screen/LED/Servo and resets pose */
     Emotion_Init(Behavior_OnEmotionChanged);
     Behavior_Init();
     UART_Init();
     Emotion_Touch(s_now_ms);
-    printf(">>> 启动完成，当前情绪: %s\n\n", emo_name(Emotion_Get()));
+    printf(">>> boot done, current emotion: %s\n\n", emo_name(Emotion_Get()));
 
     /* ---- 1. 情绪序列（模拟 PC 下发） ---- */
     feed_line("EMO:HAPPY\n");
@@ -92,12 +92,12 @@ int main(void)
     feed_line("EMO:IDLE\n");
 
     /* ---- 4. 空闲降级：20s -> BORED，再 10s -> SLEEPING ---- */
-    advance_ms(20000U, "静置 20 秒（应进入 BORED）");
-    advance_ms(10000U, "再静置 10 秒（应进入 SLEEPING）");
+    advance_ms(20000U, "idle 20s (expect BORED)");
+    advance_ms(10000U, "idle another 10s (expect SLEEPING)");
 
     /* ---- 5. 唤醒 ---- */
     feed_line("EMO:HAPPY\n");
 
-    printf("\n========== 演示结束 ==========\n");
+    printf("\n========== Demo Finished ==========\n");
     return 0;
 }
