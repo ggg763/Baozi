@@ -1,11 +1,13 @@
 """
 main.py - 包子主控程序（本地测试版）
 功能：接收音频文件 → ASR识别 → LLM推理 → TTS合成 → 状态机驱动表情动作
+      → 语义状态下发 TD1601（架构调整 v1.0）
 
 用法：
     python main.py                  # 默认：模拟硬件（FakeTD1601），处理 test.wav
     python main.py --audio a.wav    # 指定音频文件
     python main.py --gui            # 启动虚拟机器人窗口（VisualTD1601，Tkinter）
+    python main.py --serial COM3    # 连接真实 TD1601 串口（否则模拟模式打印下发消息）
 """
 import os
 import wave
@@ -16,6 +18,7 @@ from baozis_mouth import baozis_mouth
 from brain.brain import BaoZiBrain
 from emotion.state_machine import MoodStateMachine
 from robot.hardware_interface import FakeTD1601
+from communication import Communication
 
 # ---------- 初始化新版大脑 ----------
 _PROMPT_FILE = os.path.join(
@@ -99,7 +102,7 @@ def warmup():
     elapsed = time.time() - start_time
     print(f"🔥 热身完成！耗时 {elapsed:.1f} 秒")
 
-def process_audio_file(audio_path: str, clear_context: bool = True, state_machine: MoodStateMachine = None) -> dict:
+def process_audio_file(audio_path: str, clear_context: bool = True, state_machine: MoodStateMachine = None, comm: Communication = None) -> dict:
     """
     处理单个音频文件，返回完整交互结果。
     
@@ -107,7 +110,9 @@ def process_audio_file(audio_path: str, clear_context: bool = True, state_machin
         audio_path: 音频文件路径（必须是16kHz单声道WAV格式）
         clear_context: 是否清空对话历史（默认True，新会话）
         state_machine: 情绪状态机（可选）。传入时会把 LLM 情绪喂给
-            update_interaction()，驱动表情/LED/舵机动作。
+            update_interaction()，驱动本机虚拟/模拟硬件。
+        comm: TD1601 通信层（可选）。传入时把 LLM 情绪按协议下发
+            给 TD1601（架构调整 v1.0：TD1601 自主决策行为）。
     
     返回:
         dict: {
@@ -146,9 +151,13 @@ def process_audio_file(audio_path: str, clear_context: bool = True, state_machin
     robot_action = brain_result.get("robot_action", {})
     print(f"[包子] {reply} (情感: {emotion}, 指令: {command}, 动作: {robot_action})")
     
-    # 2.5 驱动状态机：表情/LED/舵机随情绪变化
+    # 2.5 驱动状态机：表情/LED/舵机随情绪变化（本机虚拟/模拟）
     if state_machine is not None:
         state_machine.update_interaction(emotion)
+
+    # 2.6 语义状态下发 TD1601（架构调整 v1.0：TD1601 自主决策行为）
+    if comm is not None:
+        comm.send_emotion(emotion)
     
     # 3. 语音合成（嘴巴）
     print("[Main] 正在合成语音...")
@@ -168,11 +177,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="包子主控程序")
     parser.add_argument("--audio", default="test.wav", help="音频文件路径（16kHz单声道WAV）")
     parser.add_argument("--gui", action="store_true", help="启动虚拟机器人窗口（VisualTD1601）")
+    parser.add_argument("--serial", default=None, help="TD1601 串口（如 COM3）；缺省为模拟模式打印下发消息")
     args = parser.parse_args()
 
-    # 0. 初始化硬件 + 状态机
+    # 0. 初始化硬件 + 状态机 + TD1601 通信层
     hardware = _create_hardware(gui=args.gui)
     state_machine = MoodStateMachine(hardware)
+    comm = Communication(port=args.serial)
     print("[Main] 状态机已启动。")
 
     try:
@@ -183,7 +194,7 @@ if __name__ == "__main__":
         if not os.path.exists(args.audio):
             print(f"错误：找不到测试音频文件 {args.audio}")
         else:
-            result = process_audio_file(args.audio, clear_context=True, state_machine=state_machine)
+            result = process_audio_file(args.audio, clear_context=True, state_machine=state_machine, comm=comm)
             print("\n========== 最终结果 ==========")
             print(f"用户说: {result['user_text']}")
             print(f"包子说: {result['reply']}")
@@ -197,5 +208,6 @@ if __name__ == "__main__":
             print("[Main] 虚拟窗口运行中，关闭窗口后退出...")
             hardware.run()
     finally:
+        comm.close()
         state_machine.shutdown()
         print("[Main] 状态机已关闭。")
