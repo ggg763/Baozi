@@ -17,6 +17,7 @@
 #include "habit_store.h"     /* HABIT 卡片：习惯缓存 + 渲染 + 命中 */
 #include "sched_store.h"     /* TODAY 卡片：日程缓存 + 渲染 + 命中 */
 #include "play_card.h"       /* 第 4 页：动作 / 情绪按钮 */
+#include "qr/net_card.h"     /* 第 5 页：配网二维码（QR:<payload> / NET:<state>）*/
 #include "behavior.h"        /* 动作请求 + 情绪刺激（不直接写舵机/改情绪）*/
 #include "emotion/emotion_manager.h"   /* EMO_STIM_PET / EMO_STIM_TOUCH */
 #include "baozi_hooks.h"      /* BAOZI_ReportHabitTap（上报打卡，不直接依赖协议层）*/
@@ -36,6 +37,10 @@ extern void face_app_hold_end(void);
 
 /* 前置声明：remind_close（定义在前）恢复界面时要用到它 */
 static void cards_show_gated(int page);
+/* 前置声明：ui_app_show_net()（配网跳转）要在抚摸状态机之前调它 */
+static void pet_finish(void);
+/* app_core 的触摸状态：跳页前要确认手指没按着 */
+extern int app_core_touch_down(void);
 
 typedef enum {
     ST_FACE = 0,     /* 表情态 */
@@ -232,6 +237,29 @@ int ui_app_ready(void)
     return (g_inited != 0) ? 1 : 0;
 }
 
+/* 把屏幕拉到 NET 页（配网二维码）。
+ * 谁调：src/net_link.c —— 收到"热点已开 + 二维码"时自动跳过去，
+ * 否则用户得自己长按进卡片层再滑三页，实机上没人猜得到。
+ * 三处硬约束：
+ *   · 番茄钟计时中不抢屏（那是用户主动开的、且有倒计时语义）；
+ *   · 提醒弹卡显示中不抢（弹卡自己会回原界面）；
+ *   · 手指正按着不抢（会在手指底下换页，体验极差）。 */
+void ui_app_show_net(void)
+{
+    if (!g_inited) {
+        return;
+    }
+    if (pomo_active() || g_remind_on || app_core_touch_down()) {
+        return;
+    }
+    pet_finish();                 /* 抚摸态别带进卡片层 */
+    g_state    = ST_CARDS;
+    g_pressing = 0;
+    g_lp_fired = 0;
+    g_idle_ms  = 0;
+    cards_show_gated(4);
+}
+
 /* ==================== v2.0 抚摸手势（"在脸上来回摸"）====================
  *
  * 需求（用户 2026-11）：在屏幕的特定区域连续滑动 → 进入"被抚摸"状态。
@@ -362,6 +390,15 @@ void ui_cards_show(int page)
         return;
     }
 
+    /* 第 5 页 = 配网二维码。全屏档自己铺满整屏（白底利于对焦），
+     * 不走下面这套"时间 + 圆点 + 卡片框"的布局。 */
+    if (page == 4 && net_card_full()) {
+        ui_clear();
+        net_card_draw_full();
+        ui_flush_begin(UI_COL_BG);
+        return;
+    }
+
     ui_clear();
     ui_set_bg_gradient(C_BG_TOP, C_BG_MID, C_BG_BOT);
 
@@ -374,10 +411,10 @@ void ui_cards_show(int page)
         ui_add_text((int16_t)((480 - w) / 2), 26, tbuf, 2, C_TITLE);
     }
 
-    /* 页码圆点（v2.0 起 4 页：TODAY / TIMER / HABIT / PLAY）*/
+    /* 页码圆点（v2.1 起 5 页：TODAY / TIMER / HABIT / PLAY / NET）*/
     {
-        int i, cy = 92, cx0 = 240 - 33;
-        for (i = 0; i < 4; i++) {
+        int i, cy = 92, cx0 = 240 - 44;
+        for (i = 0; i < 5; i++) {
             ui_add_circle((int16_t)(cx0 + i * 22), (int16_t)cy, 6, 6, 1,
                           (i == page) ? C_DOT_ON : C_DOT_OFF);
         }
@@ -394,6 +431,9 @@ void ui_cards_show(int page)
     } else if (page == 3) {
         /* PLAY 页（v2.0）：动作 / 情绪按钮（只发请求与刺激，不直接写舵机）*/
         play_card_draw();
+    } else if (page == 4) {
+        /* NET 页（v2.1）：二维码 + 配网状态；点一下放大成全屏码 */
+        net_card_draw_card();
     } else {
         /* TODAY 页：日程看板（日期组头 + 时间 + 标题点阵 + 完成圆）*/
         sched_card_draw();
@@ -549,6 +589,12 @@ void ui_app_handle_gesture(int g, uint16_t x, uint16_t y)
                 if (!play_card_tap((int)x, (int)y)) {
                     g_idle_ms = 0;               /* 没点到按钮也算有操作 */
                 }
+            } else if (g_card_page == 4) {
+                /* NET 页：点一下在"卡片内小码 ↔ 全屏大码"之间切换。
+                 * 二维码要凑近扫，全屏那档模块能从 6px 放大到 12px 以上。 */
+                if (net_card_tap((int)x, (int)y)) {
+                    ui_cards_show(4);
+                }
             } else {
                 sched_on_tap((int)x, (int)y);     /* TODAY 页：点行切换完成 */
             }
@@ -566,7 +612,7 @@ void ui_app_handle_gesture(int g, uint16_t x, uint16_t y)
         if (g_state == ST_CARDS && habit_detail_active()) {
             habit_detail_close();
             cards_show_gated(2);
-        } else if (g_state == ST_CARDS && g_card_page < 3) {
+        } else if (g_state == ST_CARDS && g_card_page < 4) {
             cards_show_gated(g_card_page + 1);
         }
         g_pressing = 0;
@@ -628,6 +674,14 @@ void ui_app_tick(uint32_t dt_ms)
         ui_app_refresh_cards();
     }
 
+    /* NET 页内容变了（新二维码 / 状态推进）：只在用户正好停在那页时补刷。
+     * 其它情况下 net_link 会显式调 ui_app_show_net() 把人拉过去。 */
+    if (net_card_take_dirty()) {
+        if (g_state == ST_CARDS && g_card_page == 4 && !pomo_active()) {
+            cards_show_gated(4);
+        }
+    }
+
     /* 提醒弹卡：番茄钟结束后补弹 → 串口静默后上屏 → 60s 自动关闭。
      * 显示期间 return：不推进卡片回落/表情/自愈刷（弹卡本身盖住一切）。 */
     if (g_remind_defer && !pomo_active()) {
@@ -682,7 +736,8 @@ void ui_app_tick(uint32_t dt_ms)
      *    错位会一直保留到下次完整刷屏。定时重刷让花屏几秒内自愈。
      * 同样避开数据下发窗口。 */
     if (g_state == ST_CARDS && !pomo_active() &&
-        (g_card_page == 0 || g_card_page == 2 || g_card_page == 3) &&
+        (g_card_page == 0 || g_card_page == 2 || g_card_page == 3 ||
+         g_card_page == 4) &&
         uart_hal_rx_quiet_ms() >= 150) {
         static uint16_t s_repaint = 0;
         s_repaint = (uint16_t)(s_repaint + dt_ms);
@@ -704,12 +759,18 @@ void ui_app_tick(uint32_t dt_ms)
         }
     }
 
-    /* 卡片层（含 MODE 三入口页）：15 秒无操作自动回落表情态 */
+    /* 卡片层（含 MODE 三入口页）：15 秒无操作自动回落表情态。
+     * NET 页例外 —— 二维码是给手机扫的，用户可能举着手机对半天，
+     * 这时候把屏切回笑脸等于把码收走了。 */
     if (g_state == ST_CARDS) {
-        g_idle_ms += dt_ms;
-        if (g_idle_ms >= CARD_IDLE_BACK_MS) {
-            pomo_reset();            /* 清理可能残留的计时流程 */
-            back_to_face();
+        if (g_card_page != 4) {
+            g_idle_ms += dt_ms;
+            if (g_idle_ms >= CARD_IDLE_BACK_MS) {
+                pomo_reset();            /* 清理可能残留的计时流程 */
+                back_to_face();
+            }
+        } else {
+            g_idle_ms = 0;
         }
     }
 

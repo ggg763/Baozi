@@ -39,6 +39,41 @@ git show <commit>                 # 看某次改动详情
 
 ## 2026-10-28
 
+### v2.1 feat(qr): 扫码配网 —— 第 5 页 NET + 板上自算二维码
+
+分支 `feat/qr-provision`。赛题要求的"二维码配网"落到 TD1601 侧的全部代码。
+详细协议与联调步骤见 `UserFolder/doc/qr_provision.md`。
+
+**链路**：PC(`net_share.py`) ─局域网 UDP─► ESP32 ─UART3(PB18, 单向)─► TD1601 ─► 屏。
+
+| 文件 | 改动 |
+|---|---|
+| `UserFolder/qr/qrgen.h/.c` | **新增**：QR 编码器（字节模式、版本 1..10、ECC L/M/Q/H、8 掩模按标准罚分选优）。纯整数运算，无 malloc，可在 PC 编译 |
+| `UserFolder/qr/net_card.h/.c` | **新增**：配网卡片。5 个状态、二维码打包成 1bpp、卡片内/全屏两套版面 |
+| `include/net_link.h`、`src/net_link.c` | **新增**：`QR:` / `NET:` 文本命令解析。UART3 与 UART0 两个入口共用 |
+| `UserFolder/ui_app.c` | 卡片层 4 页 → 5 页（圆点、滑动边界、点击分发）；`ui_app_show_net()` 自动跳转；NET 页不自动回落 |
+| `UserFolder/ui_app.h` | 新增 `ui_app_show_net()` |
+| `src/uart_esp.c` | `ESP_LINE_MAX` 64 → 160（一条 `QR:WIFI:…` 最长 117 字节）；`esp_apply_line()` 先喂 `net_link` |
+| `UserFolder/app_core.c` | 初始化调 `net_link_init()`；UART0 文本命令先过 `net_link_handle_line()`（无 ESP32 也能台架联调）|
+| `package.yaml` | 登记 `qr/qrgen.c`、`qr/net_card.c` |
+| `Baozi.mk` / `Obj/Baozi.txt` | 补 `src_net_link` / `UserFolder_qr_qrgen` / `UserFolder_qr_net_card` 三个目标（生成物，权威仍是 package.yaml）|
+
+**验证**（都不用烧录）：
+
+- `_probe/qr/qr_verify.py`：13 个用例与 `qrcode` 库比对，**去掩模后码字流全部一致**
+  （数据 + RS 纠错 + 交错 + 功能图形）；掩模号个别不同，属同分取舍；
+- `_probe/qr/ui_sim.c`：把 `LCD_*` 打桩，在 PC 上渲染真实 `ui_app.c` + `net_card.c`
+  出 BMP，三种状态版面已检查（`_probe/qr/out_net_*.bmp`）；
+- RISC-V 全量链接通过：**text 101 948 / data 644 / bss 59 560**（+5.7KB / +10.9KB）；
+- 新增三个文件与改动的 `ui_app.c` 在 `-Wall -Wextra` 下 0 warning。
+
+**踩到的两个坑**（已修，值得记住）：
+
+1. `ui_add_text` 只存指针，`net_card.c` 一开始用栈上 buf 拼 `SSID: xxx`，
+   刷出来是一行随机字符 —— `ui_sim` 一眼看出来，不用上板。
+2. 只改 `Baozi.mk` 的 `Objects0` 不够，链接用的是 `Obj/Baozi.txt` 那份清单；
+   漏了会 `undefined reference`，而 `.o` 明明已经编出来了。
+
 ### `821ecdb` fix(uart): 按实际 PCB 改为单向接收，仅 PB18
 
 **硬件事实**：已流片的板子上，ESP32 与 TD1601 之间只走了一根 PB18

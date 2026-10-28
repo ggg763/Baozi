@@ -78,7 +78,7 @@ Objects0=$(IntermediateDirectory)/QSPI_test_video_tetra_test$(ObjectSuffix) $(In
 	$(IntermediateDirectory)/movements_moves_happy$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_idle$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_loving$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_sad$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_sleep$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_surprised$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_play_card$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_pomo$(ObjectSuffix) $(IntermediateDirectory)/servo_test_servo_core$(ObjectSuffix) $(IntermediateDirectory)/servo_test_servo_dual_test$(ObjectSuffix) \
 	$(IntermediateDirectory)/servo_test_servo_mvp_test$(ObjectSuffix) $(IntermediateDirectory)/servo_test_servo_range_test$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_test$(ObjectSuffix) $(IntermediateDirectory)/test_emotion_test$(ObjectSuffix) $(IntermediateDirectory)/test_ir_state_test$(ObjectSuffix) $(IntermediateDirectory)/test_ir_test$(ObjectSuffix) $(IntermediateDirectory)/test_serial_min_test$(ObjectSuffix) $(IntermediateDirectory)/tracking_track_dual$(ObjectSuffix) $(IntermediateDirectory)/tracking_track_yaw$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_ui$(ObjectSuffix) \
 	$(IntermediateDirectory)/UserFolder_ui_app$(ObjectSuffix) $(IntermediateDirectory)/chip_config$(ObjectSuffix) $(IntermediateDirectory)/src_ICNT8952BN$(ObjectSuffix) $(IntermediateDirectory)/src_baozi_proto_app$(ObjectSuffix) $(IntermediateDirectory)/src_board_init$(ObjectSuffix) $(IntermediateDirectory)/src_habit_store$(ObjectSuffix) $(IntermediateDirectory)/src_main$(ObjectSuffix) $(IntermediateDirectory)/src_sched_store$(ObjectSuffix) $(IntermediateDirectory)/src_uart_esp$(ObjectSuffix) $(IntermediateDirectory)/src_uart_hal$(ObjectSuffix) \
-	$(IntermediateDirectory)/src_uart_protocol$(ObjectSuffix) $(IntermediateDirectory)/src_video$(ObjectSuffix) 
+	$(IntermediateDirectory)/src_uart_protocol$(ObjectSuffix) $(IntermediateDirectory)/src_video$(ObjectSuffix) $(IntermediateDirectory)/src_net_link$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_qr_qrgen$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_qr_net_card$(ObjectSuffix) 
 
 
 
@@ -367,5 +367,20 @@ $(IntermediateDirectory)/src_video$(ObjectSuffix): src/video.c
 Lst/src_video$(PreprocessSuffix): src/video.c
 	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/src_video$(PreprocessSuffix) src/video.c
 
+
+$(IntermediateDirectory)/src_net_link$(ObjectSuffix): src/net_link.c  
+	$(CC) $(SourceSwitch) src/net_link.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/src_net_link$(ObjectSuffix) -MF$(IntermediateDirectory)/src_net_link$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/src_net_link$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
+Lst/src_net_link$(PreprocessSuffix): src/net_link.c
+	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/src_net_link$(PreprocessSuffix) src/net_link.c
+
+$(IntermediateDirectory)/UserFolder_qr_qrgen$(ObjectSuffix): UserFolder/qr/qrgen.c  
+	$(CC) $(SourceSwitch) UserFolder/qr/qrgen.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/UserFolder_qr_qrgen$(ObjectSuffix) -MF$(IntermediateDirectory)/UserFolder_qr_qrgen$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/UserFolder_qr_qrgen$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
+Lst/UserFolder_qr_qrgen$(PreprocessSuffix): UserFolder/qr/qrgen.c
+	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/UserFolder_qr_qrgen$(PreprocessSuffix) UserFolder/qr/qrgen.c
+
+$(IntermediateDirectory)/UserFolder_qr_net_card$(ObjectSuffix): UserFolder/qr/net_card.c  
+	$(CC) $(SourceSwitch) UserFolder/qr/net_card.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/UserFolder_qr_net_card$(ObjectSuffix) -MF$(IntermediateDirectory)/UserFolder_qr_net_card$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/UserFolder_qr_net_card$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
+Lst/UserFolder_qr_net_card$(PreprocessSuffix): UserFolder/qr/net_card.c
+	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/UserFolder_qr_net_card$(PreprocessSuffix) UserFolder/qr/net_card.c
 
 -include $(IntermediateDirectory)/*$(DependSuffix)

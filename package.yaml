@@ -115,6 +115,11 @@ source_file:
   - UserFolder/ui_app.c
   - UserFolder/pomo.c
   - UserFolder/app_core.c
+  # --- v2.1 配网：二维码 + NET 卡片页（2026-10-28）
+  #     qrgen.c 是纯计算的 QR 编码器（可在 PC 上用 _probe/qr/qr_verify.py 验证），
+  #     net_card.c 负责状态与绘制。两者都不碰外设，只在 ui_app 的页面里露脸。
+  - UserFolder/qr/qrgen.c
+  - UserFolder/qr/net_card.c
   # --- 2026-10-28 补登记：这两个文件被 main.c / ui_app.c 直接调用
   #     （behavior_init / play_card_draw / play_card_tap），
   #     但此前只手工写进了 Baozi.mk 的 Objects0 与编译规则，没写进本表。

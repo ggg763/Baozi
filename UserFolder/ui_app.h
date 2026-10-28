@@ -25,6 +25,11 @@ void ui_app_set_emotion(const char *emo);
 /* ui_app_init() 是否已跑过（face_ui 桥接做惰性初始化用）*/
 int  ui_app_ready(void);
 
+/* 把屏幕拉到第 5 页 NET（配网二维码）。
+ * 由 src/net_link.c 在"热点已开、码已就绪"时调用 —— 用户不必自己长按进卡片层再滑过去。
+ * 番茄钟计时中 / 提醒弹卡中 / 手指按着时**不抢屏**（直接返回）。 */
+void ui_app_show_net(void);
+
 void ui_cards_show(int page);                             /* 重绘卡片页（pomo 退出时回调）*/
 
 /* 数据变了想刷新卡片层：只在"当前正好停在卡片层"时重绘，

@@ -23,6 +23,7 @@
 #include "ui_app.h"                 /* ui_app_init / handle_gesture / tick */
 #include "ui.h"                     /* ui_flush_busy / ui_flush_step（分片刷屏）*/
 #include "uart_esp.h"               /* uart_esp_init / uart_esp_poll */
+#include "net_link.h"               /* 配网命令 QR: / NET:（v2.1）*/
 #include "emotion/emotion_fsm.h"    /* emotion_fsm_feed_line（文本命令）*/
 #include "app_core.h"
 
@@ -67,6 +68,9 @@ void app_core_init(void)
     /* 屏幕 + 参数化脸先就绪：emotion_fsm_init() 里的 face_set_bus_callback()
      * 与首帧清屏都要在屏幕初始化之后才有意义。 */
     ui_app_init();
+
+    /* 配网卡片：清空上一轮的二维码与状态（NET 页此时显示 waiting）*/
+    net_link_init();
 
     printf("[app] --- icnt8952bn_init() ---\r\n");
     icnt8952bn_init();
@@ -135,6 +139,11 @@ void app_core_step(void)
         int guard = 0;
         while (uart_hal_take_line(line, (int)sizeof(line)) && guard < 4) {
             guard++;
+            /* ★ 配网命令先截走：QR: / NET: 不属于情感状态机的语法。
+             * 这条通路让"没有 ESP32 也能台架联调"—— 串口助手敲一行即可。 */
+            if (net_link_handle_line(line)) {
+                continue;
+            }
             printf("[app] cmd: %s\r\n", line);
             emotion_fsm_feed_line(line);
         }
