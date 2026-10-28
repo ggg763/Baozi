@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CDK_Workspace Name="project" Database="LanguageSever" DoubleClick="Yes">
+  <DefaultPackPath>$(CDKWS)\__workspace_pack__</DefaultPackPath>
+  <Project Name="Baozi" Path="project.cdkproj" RootPath="" Active="Yes"/>
+  <Project Name="hello_world" Path="../../../QSPI_480/projects/LCD/project.cdkproj" RootPath="" Active="No"/>
+  <BuildMatrix>
+    <WorkspaceConfiguration Name="Debug" Selected="yes">
+      <Environment/>
+      <Project Name="Baozi" ConfigName="BuildSet"/>
+      <Project Name="hello_world" ConfigName="BuildSet"/>
+    </WorkspaceConfiguration>
+  </BuildMatrix>
+</CDK_Workspace>
