@@ -328,6 +328,45 @@ def _iter_json_objects(text: str):
     return list(reversed(out))
 
 
+# 小模型常见"复读病"：把 prompt 里的示例占位字当标准答案，输出一堆
+# Markdown 代码块 + "- reply：" "- emotion：" 标签，原样吐回来。
+# 这些字不该进喇叭，统一识别并清掉。
+_PLACEHOLDER_MARKERS = (
+    "给用户的话",
+    "这里写你真正要说的那句话",
+    "这里写…",
+    "<这里写",
+    "要念出来的话",
+)
+
+
+def _looks_like_placeholder(reply: str) -> bool:
+    """回复是不是模型在复读占位/格式垃圾，而非真实回答。"""
+    r = reply.strip()
+    if not r:
+        return True
+    # 直接命中占位字
+    for m in _PLACEHOLDER_MARKERS:
+        if m in r:
+            return True
+    # 里面混了 Markdown 代码块 / "- reply：" / "- emotion：" 之类格式标签
+    if "```" in r:
+        return True
+    if any(k in r for k in ("- reply", "- emotion", "- intent", "- intensity")):
+        return True
+    return False
+
+
+def _strip_format_junk(reply: str) -> str:
+    """把 Markdown 代码块围栏、"- reply：" 标签等格式垃圾剥掉，尽量留下正文。"""
+    r = reply.strip()
+    # 去掉成对的 ``` 代码块围栏（含语言标注）
+    r = re.sub(r"```[a-zA-Z]*", "", r)
+    # 去掉 "- reply：" / "reply：" 这类字段标签行
+    r = re.sub(r"(?m)^\s*[-*]?\s*(reply|emotion|intent|intensity|emotion|回复)\s*[：:]\s*", "", r)
+    return r.strip()
+
+
 class Llm:
     name = "base"
 
@@ -367,8 +406,12 @@ class OpenAiCompatLlm(Llm):
         "你的回复有且只有一个 JSON 对象，除此之外不要输出任何字符。\n"
         "⚠️ 绝对不要先说话再贴 JSON：不要说“好的”“明白了”之类，不要写解释，\n"
         "   不要用 Markdown 或代码块，第一个字符就必须是 `{`，最后一个字符是 `}`。\n"
-        '{"reply": "给用户的话", "emotion": "...", "intent": "..."}\n'
-        "- reply：要念出来的话（口语化纯文本，别写 Markdown/表情符号/旁白）\n"
+        "JSON 示例（字段名照抄，值换成你的真实内容）：\n"
+        '{"reply": "<这里写你真正要说的那句话>", "emotion": "<六选一>", '
+        '"intensity": "<三选一>", "intent": "<七选一>"}\n'
+        "- reply：要念出来的话（口语化纯文本，别写 Markdown/表情符号/旁白）。\n"
+        "    ⚠️ reply 里必须写你这一轮真正想对用户说的话，绝对禁止照抄\n"
+        "    “给用户的话”“<这里写…>”这类占位字，或输出空的 reply。\n"
         "- emotion：只能是 happy / sad / angry / surprised / loving / neutral 之一\n"
         "- intensity：情感强度，只能是 low / medium / high 之一\n"
         "    · low    = 淡淡的一点（随口一提、轻微共情）\n"
@@ -614,12 +657,24 @@ class OpenAiCompatLlm(Llm):
                 guessed = guess_emotion_from_reply(reply)
                 if guessed != "neutral":
                     emotion = guessed
+            # ★ 兜底：模型复读了占位字/格式垃圾（如 reply="给用户的话" 或
+            #   带 ``` 代码块），宁可整句丢弃也不进喇叭 —— 否则包子会念出
+            #   "给用户的话 - emotion：neutral" 这种没人能听懂的东西。
+            if reply and _looks_like_placeholder(reply):
+                cleaned = _strip_format_junk(reply)
+                if cleaned and not _looks_like_placeholder(cleaned):
+                    reply = cleaned
+                else:
+                    reply = ""   # 洗不干净就丢弃，让上层当作"没内容"处理
             if reply:
                 return reply, emotion, intent, intensity, memorize, forget
 
         # 降级：整段当回复（连 JSON 都没有）
         if text:
-            return (text, guess_emotion_from_reply(text), "none",
+            cleaned = _strip_format_junk(text)
+            if _looks_like_placeholder(cleaned):
+                return ("", "neutral", "none", DEFAULT_INTENSITY, {}, [])
+            return (cleaned, guess_emotion_from_reply(cleaned), "none",
                     DEFAULT_INTENSITY, {}, [])
         return "", "neutral", "none", DEFAULT_INTENSITY, {}, []
 
