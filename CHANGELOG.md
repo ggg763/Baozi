@@ -7,6 +7,66 @@
 
 ---
 
+## 2026-10-28 · 敏感信息移出仓库
+
+仓库是公开的，而固件/配置里散落着明文 WiFi 密码、局域网 IP、真实 AppID，
+以及编进 `.bin` 的一份拷贝。全部迁到 `.gitignore` 覆盖的本机文件里。
+
+### 1. WiFi 凭据 → `wifi_secrets.h`
+
+`config.h` 不再写 SSID/密码，改为：
+
+```c
+#if __has_include("wifi_secrets.h")
+#include "wifi_secrets.h"
+#else
+#warning "..."
+#define WIFI_SECRETS_MISSING 1
+static const char* const WIFI_SSID_LIST[]     = { "YOUR_WIFI_SSID" };
+static const char* const WIFI_PASSWORD_LIST[] = { "YOUR_WIFI_PASSWORD" };
+#endif
+```
+
+- 仓库只留 `wifi_secrets.example.h` 模板
+- `WIFI_NET_COUNT` 改由数组长度推出（`sizeof`），不会再出现"加了热点忘了改计数"
+- 缺少 secrets 文件时**仍可编译**（退回占位值），固件启动会在串口喊
+  `!! 没有 wifi_secrets.h`；实测占位固件 1,057,846 B、正常固件 1,058,082 B
+- `AP_PASSWORD` 一并移入 secrets（`#ifndef` 兜底）
+
+### 2. 局域网 IP → 通用占位 / 本机配置
+
+| 位置 | 改前 | 改后 |
+|---|---|---|
+| ESP32 `STATIC_IP/GW/DNS` | 真实网段 | `192.168.1.x` 占位（`USE_STATIC_IP=0` 时本就不生效） |
+| ESP32 注释里的调试 IP | 真实 | `192.168.1.100` |
+| PC `config.py` / `config.json` 的 `esp32_ip` | 真实 | 空字符串（走 UDP 发现） |
+
+PC 侧新增 **`config.local.json`** 覆盖机制（`Config.load` 里 `config.json` 之后读它，
+同名键覆盖）。IP、串口、外部 LLM 的 key 都该写这里，模板 `config.local.example.json`。
+实测：无该文件时 `esp32_ip=''`；建一个含 `192.168.1.77` 的文件后读到该值。
+
+### 3. 小程序：AppID 与后端地址
+
+- `project.config.json` 的 `appid` → `touristappid`（测试号）
+- `app.js` 的 `apiBase` → `http://127.0.0.1:8000`
+- 真机调试的局域网地址改为**运行时**设置，不再写进源码：
+  `wx.setStorageSync('apiBase', 'http://192.168.x.x:8000')`（`utils/request.js` 优先读缓存）
+- `project.private.config.json`（开发者工具按人生成）改为不入库
+
+### 4. 预编译固件不再入库
+
+`firmware/*.bin` 里编进了 WiFi 明文密码，等于把密码换个格式提交一次。
+已 `git rm --cached`（本地文件保留），`.gitignore` 去掉原来的例外规则。
+需要时跑 `02_ESP32/build.bat` 重新生成。
+
+### 5. 仍未处理：历史提交里的旧凭据
+
+`.gitignore` 只能挡住"以后"。**旧密码仍在 Git 历史里**（`49fbc14`、`326e02e` 等），
+公开仓库上一查就有。要彻底清掉得重写 `v2` 分支历史并强推，属破坏性操作，
+需要确认后再做；另一条路是把仓库转为 Private。
+
+---
+
 ## 2026-10-28 · 实机联调：修掉「板子上不了线」的真凶
 
 上一轮编译通过后烧进真板子，暴露出 WiFi 模式从未被真正跑过。

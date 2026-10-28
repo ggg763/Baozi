@@ -28,9 +28,12 @@ delivery/
 ├── 01_PC/                     PC 认知层完整源码（Python）
 │   └── pc_baozi/
 ├── 02_ESP32/                  ESP32-S3 固件完整源码（Arduino）
+│   ├── build.bat              ← 一键编译（板级参数写死）
+│   ├── flash.bat              ← 一键烧录（调 core 自带 esptool）
 │   └── esp32_baozi/
-│       ├── *.ino *.cpp *.h    ← 12 个源文件（最新版）
-│       └── firmware/*.bin     ← 预编译固件（不装 Arduino 也能烧）
+│       ├── *.ino *.cpp *.h    ← 源文件
+│       ├── wifi_secrets.example.h  ← WiFi 凭据模板（真实值放 wifi_secrets.h，不入库）
+│       └── firmware/          ← 本机编译产物（*.bin 不入库：里面含 WiFi 明文）
 ├── 03_TD1601/                 TD1601 固件
 │   ├── baozi/                 ← 源码存档（69 个 .c / 44 个 .h，只读）
 │   ├── README_TD1601.md       ← 编译烧录方法 + 为什么必须放回 SDK
@@ -145,6 +148,16 @@ pip install torch==2.11.0+cu128 torchaudio==2.11.0+cu128 ^
 
 想用另一份配置：`python main.py --config other.json`（显式指定优先）。
 
+**本机私有值写 `config.local.json`**（不入库，同名键覆盖 `config.json`）：
+
+| 该放这儿的 | 例子 |
+|---|---|
+| 写死 ESP32 地址（跳过 UDP 发现） | `"esp32_ip": "192.168.1.204"` |
+| 外部 LLM 的 base_url / api_key / 模型 | `"llm_base_url": "https://api.deepseek.com/v1"` |
+| 串口号 | `"td1601_port": "COM5"` |
+
+模板见同目录 `config.local.example.json`。没有这个文件也能跑（用 `config.json` 的值）。
+
 常改的键：
 
 | 键 | 作用 | 当前值 |
@@ -172,6 +185,19 @@ python server.py --asr-backend mock --llm-backend echo --tts-backend tone
 Arduino IDE 打开 `02_ESP32/esp32_baozi/esp32_baozi.ino`。
 
 ⚠️ **文件夹必须叫 `esp32_baozi`**（Arduino 硬性要求：`.ino` 所在文件夹名必须与文件名一致）。
+
+#### 第一次用：填自己的 WiFi
+
+WiFi 凭据**不在仓库里**（仓库公开，固件里是明文常量）。
+
+```bash
+cd 02_ESP32/esp32_baozi
+copy wifi_secrets.example.h wifi_secrets.h    # macOS/Linux: cp ...
+# 然后编辑 wifi_secrets.h，填 SSID / 密码
+```
+
+`wifi_secrets.h` 已被 `.gitignore` 排除。没这个文件也能编译（退回占位值并打
+`#warning`，固件启动时还会往串口喊一行「没有 wifi_secrets.h」），但连不上热点。
 
 开发板设置（少一项就会花式报错）：
 
@@ -218,16 +244,16 @@ arduino-cli compile \
 两个脚本都实跑验证过（编译 0 error / 0 warning；烧录 `Hash of data verified`）。
 用 IDE 的话，务必手动确认上表五项设置。
 
-#### 换热点（当前网络见下表）
+#### 换热点
 
-热点写死在 `02_ESP32/esp32_baozi/config.h` 的 `WIFI_SSID_LIST` / `WIFI_PASSWORD_LIST`，
+热点与密码在 `02_ESP32/esp32_baozi/wifi_secrets.h`（不入库，模板 `wifi_secrets.example.h`）。
 `[0]` 是主用、`[1]` 起是备选（每个最多等 `WIFI_PER_NET_TIMEOUT_MS` = 12 s，按顺序试）。
 
-| 项 | 当前值 |
+| 项 | 位置 |
 |---|---|
-| SSID | `vivo S30 Pro mini`（2.4 GHz / WPA2-个人） |
-| 备选 | `lanlll` |
-| PC 侧 `transport` | `tcp`（与 `USE_USB_LINK 0` 配对） |
+| SSID / 密码 | 同文件 `WIFI_SSID_LIST` / `WIFI_PASSWORD_LIST`（两个数组必须等长） |
+| AP 模式密码 | 同文件 `AP_PASSWORD`（仅 `USE_AP_MODE 1` 用） |
+| PC 侧 `transport` | `config.json`，当前 `tcp`（与 `USE_USB_LINK 0` 配对） |
 
 改完必须重烧固件（凭据编在固件常量里，不是运行时可配）。ESP32 用 UDP 8766
 向 `255.255.255.255` 广播找 PC，`SERVER_HOST` 是 `0.0.0.0` 兜底，**换网段不需要改 IP**。
@@ -241,10 +267,11 @@ arduino-cli compile \
 部分手机热点默认开启"设备隔离/AP 隔离"，会让同一热点下的两台设备互相看不见，
 需在热点设置里关掉。
 
-烧录（`firmware/` 内是本机构建的产物；旧版在 `firmware/archive_20261025/`）：
+烧录（先跑一次 `build.bat` 生成 `firmware/`，那三个 bin 不入库）：
 
 ```bash
 # 有 Arduino IDE：直接点 Download
+# 或者：02_ESP32\flash.bat COM14
 # 只有 esptool（v4/v5 通用，write_flash / write-flash 均可）：
 esptool --chip esp32s3 -p COMx -b 921600 write-flash \
   --flash-mode dio --flash-freq 80m --flash-size 16MB \
@@ -362,7 +389,7 @@ run.bat                       # 语音 + 视觉 + 情感 + 卡片，全部拉起
 |---|---|
 | PC / ESP32 源码 | 本包 `01_PC`、`02_ESP32` |
 | TD1601 源码 | SDK 内 `projects/baozi`（不在本包，见 `03_TD1601`） |
-| 预编译 ESP32 固件 | 本包 `02_ESP32/esp32_baozi/firmware/` |
+| 预编译 ESP32 固件 | **不入库**（镜像里含 WiFi 明文）：本机用 `02_ESP32/build.bat` 生成到 `firmware/` |
 | 模型权重 | **不随包分发**：`yolov8n.pt` 首次运行自动下载 |
 | ASR 模型 | SenseVoiceSmall 首次运行从 ModelScope 下载（约 900 MB） |
 | 对话/视觉模型 | 需本机 Ollama 拉取：`ollama pull qwen2.5:3b`、`ollama pull qwen3-vl:2b` |

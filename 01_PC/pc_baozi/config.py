@@ -161,9 +161,10 @@ class Config:
     # -> 没检出时才回落 qwen3-vl 做场景描述。
     # 设 vision_enabled = False 就只跑语音对话，不开图像。
     vision_enabled: bool = True
-    # ESP32 地址：WiFi 模式下起步时用 UDP 发现拿真实地址，
-    # 发现失败时才回落到这个值（兜底）。
-    esp32_ip: str = "10.16.117.204"
+    # ESP32 地址：WiFi 模式下起步时用 UDP 发现拿真实地址。
+    # 这里留空（不写死任何人的 IP）。排查时想跳过发现，就把实际地址填到
+    # config.local.json（不入库）或命令行 --esp32-ip 里。
+    esp32_ip: str = ""
     vision_model: str = "qwen3-vl:2b"      # Ollama 视觉模型（YOLO 没检出时的兜底）
     vision_interval_s: float = 5.0         # 每隔多少秒抓一次图并描述
     vision_timeout_s: float = 30.0         # 抓图 HTTP 超时（秒）
@@ -235,20 +236,31 @@ class Config:
     # ------------------------------------------------------------------
     @classmethod
     def load(cls, path: str | Path | None = None) -> "Config":
-        """从 JSON 文件加载，未出现的键用默认值。"""
+        """从 JSON 文件加载，未出现的键用默认值。
+
+        两个文件，后者覆盖前者：
+          config.json        —— 公开配置（模板，可入库）
+          config.local.json  —— 本机私有值（IP / API key / 路径），.gitignore 排除
+
+        `config.local.json` 不存在就跳过，所以新 clone 下来直接能跑。
+        """
         cfg = cls()
         if not path:
             return cfg
 
         p = Path(path)
-        if not p.exists():
-            return cfg
-
-        data: Dict[str, Any] = json.loads(p.read_text(encoding="utf-8"))
+        files = [p, p.with_name("config.local.json")]
         known = {f for f in asdict(cfg)}
-        for k, v in data.items():
-            if k in known:
-                setattr(cfg, k, v)
+        for f in files:
+            if not f.exists():
+                continue
+            try:
+                data: Dict[str, Any] = json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            for k, v in data.items():
+                if k in known:
+                    setattr(cfg, k, v)
         return cfg
 
     def apply_overrides(self, **kwargs) -> "Config":

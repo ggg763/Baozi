@@ -29,6 +29,14 @@ photos/
 face_report.json
 report.json
 
+# ---------- 凭据 / 本机私有配置（不入库）----------
+# ESP32 的 WiFi SSID/密码、AP 密码：模板见 wifi_secrets.example.h
+02_ESP32/esp32_baozi/wifi_secrets.h
+# PC 的本机私有配置：IP、API key、路径等，覆盖 config.json 的同名键
+01_PC/pc_baozi/config.local.json
+# 微信开发者工具按人生成的配置
+01_PC/pc_baozi/app/miniprogram/project.private.config.json
+
 # ---------- 编辑器 / 系统 ----------
 .idea/
 .vscode/
@@ -50,4 +58,6 @@ Lst/
 *.hex
 *.map
 *.asm
-!02_ESP32/esp32_baozi/firmware/*.bin
+
+# 注意：ESP32 的 firmware/*.bin **故意不例外** —— 固件镜像里编进了 WiFi 明文
+# 密码，入库等于公开。需要时用 02_ESP32/build.bat 本机编译生成。

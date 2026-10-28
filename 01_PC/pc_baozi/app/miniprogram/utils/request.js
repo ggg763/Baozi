@@ -3,7 +3,17 @@ const app = getApp()
 
 // 当前生效的后端地址。单独抽出来是因为真机排查时要把它显示出来 ——
 // 「手机连不上」十有八九是地址不对，而不是代码不对。
+//
+// 优先级：本地缓存 > app.js 的默认值。
+// 真机调试的局域网 IP 存在缓存里（wx.setStorageSync('apiBase', ...)），
+// 这样它就不会出现在任何源码文件里（仓库公开，不该带自家网段）。
 function baseUrl() {
+  try {
+    const saved = wx.getStorageSync('apiBase')
+    if (saved) return saved
+  } catch (e) {
+    // 缓存读失败就用默认值，不影响启动
+  }
   return (app && app.globalData && app.globalData.apiBase) || ''
 }
 

@@ -43,7 +43,7 @@
   "save_audio_dir": "",
   "debug": false,
   "vision_enabled": true,
-  "esp32_ip": "10.16.117.204",
+  "esp32_ip": "",
   "vision_model": "qwen3-vl:2b",
   "vision_interval_s": 5.0,
   "vision_timeout_s": 30.0,

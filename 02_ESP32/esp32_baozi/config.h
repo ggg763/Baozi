@@ -65,7 +65,7 @@
 // ---- AP 模式的参数（USE_AP_MODE=1 时才用；保留以备切换）----
 // 故意不用常见名字，避免和邻居的 "ESP32" 撞名。
 #define AP_SSID         "baozi-cam"
-#define AP_PASSWORD     "baozi12345"    // ≥8 位，WPA2
+// AP_PASSWORD 见下方「凭据不写在本文件里」一节：真实值放 wifi_secrets.h
 #define AP_CHANNEL      6               // 尽量避开你路由器在用的信道，减少干扰
 #define AP_HIDDEN       0               // 1 = 隐藏 SSID（要手输名字才连得上）
 #define AP_MAX_CLIENTS  2               // 只服务 PC + 调试用手机
@@ -86,15 +86,37 @@
 //   · 必须是 2.4GHz（ESP32-S3 硬件不支持 5GHz；iPhone  hotspots 要开"最大兼容性"）
 //   · 必须是 WPA2（WPA3 兼容性差，会报 status=6）
 //   · SSID 用纯英文（中文 SSID 实测报 status=6 被对方断开）
-#define WIFI_NET_COUNT  2
-static const char* const WIFI_SSID_LIST[WIFI_NET_COUNT] = {
-  "vivo S30 Pro mini",  // [0] 当前路由：本人手机热点（2026-10-28 起）
-  "lanlll",             // [1] 开发用（备选）
-};
-static const char* const WIFI_PASSWORD_LIST[WIFI_NET_COUNT] = {
-  "gggg6666",
-  "scfh86mesrfmia2",
-};
+//
+// ★ 凭据不写在本文件里 ★
+//   真实 SSID / 密码放在同目录的 wifi_secrets.h，该文件被 .gitignore 排除，
+//   不会进仓库、不会进 Git 历史。仓库里只有 wifi_secrets.example.h 模板。
+//   第一次用：把 wifi_secrets.example.h 复制成 wifi_secrets.h，填自己的热点。
+//
+//   这样做的原因：本仓库是公开的，而固件里的 WiFi 密码是明文常量，
+//   推到 GitHub 等于公开自家热点密码（历史提交里已经发生过一次，已清理）。
+//
+//   wifi_secrets.h 需要定义：
+//       static const char* const WIFI_SSID_LIST[]     = { "...", "..." };
+//       static const char* const WIFI_PASSWORD_LIST[] = { "...", "..." };
+//       #define AP_PASSWORD "..."      // 仅 USE_AP_MODE=1 时用，可省略
+//   两个数组长度必须严格一致（顺序也一致），否则会读到脏内存。
+#if __has_include("wifi_secrets.h")
+#include "wifi_secrets.h"
+#else
+#warning "wifi_secrets.h 缺失：WiFi 凭据用的是占位值，板子连不上热点（见 wifi_secrets.example.h）"
+// 编译期的 #warning 在 Arduino IDE 的输出里容易被刷过去，所以再定义一个标记，
+// 让固件启动时往串口打一行醒目的提示（见 esp32_baozi.ino 的 setup）。
+#define WIFI_SECRETS_MISSING 1
+static const char* const WIFI_SSID_LIST[]     = { "YOUR_WIFI_SSID" };
+static const char* const WIFI_PASSWORD_LIST[] = { "YOUR_WIFI_PASSWORD" };
+#endif
+
+// 热点数量由数组长度推出，不再手写，避免"改了列表忘了改计数"。
+#define WIFI_NET_COUNT  ((int)(sizeof(WIFI_SSID_LIST) / sizeof(WIFI_SSID_LIST[0])))
+
+#ifndef AP_PASSWORD
+#define AP_PASSWORD     "CHANGE_ME_123"  // ≥8 位，WPA2；真实值放 wifi_secrets.h
+#endif
 
 // 兼容旧代码：WIFI_SSID / WIFI_PASSWORD 指向列表第 0 个（主用热点）
 #define WIFI_SSID       (WIFI_SSID_LIST[0])
@@ -110,10 +132,15 @@ static const char* const WIFI_PASSWORD_LIST[WIFI_NET_COUNT] = {
 //   双方互相监听 8766 端口，收到就更新对方地址 —— 换任何网络都不用改代码。
 // 因此这里【不再写死 IP】，下面的 SERVER_HOST 只作为"发现失败时的兜底"。
 #define USE_STATIC_IP   0               // 0 = DHCP（自动适配当前网络，推荐）
-#define STATIC_IP       "10.16.117.204" // 仅当 USE_STATIC_IP=1 时有效
-#define STATIC_GW       "10.16.117.104"
+// USE_STATIC_IP=1 时才用。这里是**通用占位值**，不是某台机器的真实地址；
+// 真要固定 IP，请按现场网段改，或干脆在 wifi_secrets.h 里覆盖这三个宏
+// （那边不受版本控制，不会把自家网段推上 GitHub）。
+#ifndef STATIC_IP
+#define STATIC_IP       "192.168.1.50"
+#define STATIC_GW       "192.168.1.1"
 #define STATIC_MASK     "255.255.255.0"
-#define STATIC_DNS      "10.16.117.104"
+#define STATIC_DNS      "192.168.1.1"
+#endif
 
 // UDP 发现端口（两端必须一致）
 #define DISCOVERY_PORT  8766
@@ -122,7 +149,7 @@ static const char* const WIFI_PASSWORD_LIST[WIFI_NET_COUNT] = {
 //
 // ⚠️ 2026-10-17（组员 app 版踩的坑，合并沿用）：原来这里写死某个真实 IP，
 //    一旦 UDP 发现失败，板子就拿那个死地址猛连，日志里无限刷
-//    "连接 10.16.117.221 ... 连接失败"，看上去像 bug，实际只是 PC 程序没开。
+//    "连接 192.168.1.100 ... 连接失败"，看上去像 bug，实际只是 PC 程序没开。
 //    换成 0.0.0.0（保留地址，永远不可能是真实主机）后，link.cpp 会先问
 //    discoveryServerFound()：没发现过 PC 就根本不尝试连接，只打印排查提示。
 #define SERVER_HOST     "0.0.0.0"
@@ -133,7 +160,7 @@ static const char* const WIFI_PASSWORD_LIST[WIFI_NET_COUNT] = {
 // 0 是组员那版固件的行为（避免拿"死地址"无限刷连接失败）。
 // 但排查"板子明明在线、HTTP 也通，就是不连 PC"时，这个保护会让人分不清
 // 到底是【UDP 发现不通】还是【TCP 连不上】。临时改成 1，并把 SERVER_HOST
-// 写成 PC 的实际 IP（如 "10.16.117.221"），就能一刀切开：
+// 写成 PC 的实际 IP（如 "192.168.1.100"），就能一刀切开：
 //   · 改完能连上   -> 问题在 UDP 发现（广播被拦 / 热点客户端隔离），TCP 是好的
 //   · 改完还连不上 -> 问题在 TCP（防火墙拦入站 / 板子还连着上一台 PC）
 // ⚠️ 排查完记得改回 0 与 "0.0.0.0"。

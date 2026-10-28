@@ -1,0 +1,14 @@
+{
+  "_说明": "本机私有配置示例。复制成 config.local.json 后生效（该文件不入库）。",
+  "_说明2": "同名键会覆盖 config.json；不写的键沿用 config.json / config.py 的默认值。",
+  "_说明3": "常见用途：写死 ESP32 地址跳过发现、换成本机串口、填外部 LLM 的 key。",
+
+  "esp32_ip": "192.168.1.204",
+  "td1601_port": "COM5",
+
+  "llm_base_url": "https://api.deepseek.com/v1",
+  "llm_api_key": "sk-在此填入你自己的 key",
+  "llm_model": "deepseek-chat",
+
+  "save_audio_dir": ""
+}

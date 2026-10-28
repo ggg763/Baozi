@@ -525,6 +525,10 @@ void setup() {
 #endif
   logLine("  下行: PC 情绪/意图 -> UART2(GPIO14) -> TD1601");
   logLine("==================================================");
+#ifdef WIFI_SECRETS_MISSING
+  logLine("  !! 没有 wifi_secrets.h：当前用的是占位 SSID/密码，肯定连不上热点。");
+  logLine("     把 wifi_secrets.example.h 复制成 wifi_secrets.h，填好再编译。");
+#endif
   logPrintf("空闲堆=%uKB psram=%uKB 空闲psram=%uKB\n",
             (unsigned)(ESP.getFreeHeap()/1024),
             (unsigned)(ESP.getPsramSize()/1024),
