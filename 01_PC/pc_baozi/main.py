@@ -1,3 +1,4 @@
+# noinspection LanguageDetectionInspection
 """包子机器人 · PC 端主入口。
 一个进程里同时跑三条链路（全部经过【一根 USB 线】与 ESP32 通信）：
   1) 语音对话：ESP32 <-> USB 串口 <-> VAD/ASR/LLM/TTS
@@ -31,11 +32,65 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import tempfile
 import threading
 import time
 
 from server import BANNER, apply_extra_overrides, check_dependencies, make_config
+
+
+# ---------------------------------------------------------------------
+#  单实例保护：main.py 要独占串口（COM7/COM16 等）和 8765/8766 端口。
+#  双击 run.bat 多次、或旧实例没退干净就重开，会造成多个实例抢串口、
+#  互相抢发现广播 —— 现象是"串口打不开 / ESP32 连不上 / 屏幕收不到指令"。
+#
+#  做法：往临时目录写一个锁文件，里面存 PID。启动时若锁还在、且那个 PID
+#  还活着，就直接退出并提示；锁文件里的 PID 已死（残留）则覆盖它。
+#  锁文件随进程退出自动清掉（atexit），正常 Ctrl+C / stop() 都会触发。
+# ---------------------------------------------------------------------
+_LOCK_NAME = "baozi_main.lock"
+
+
+def _acquire_single_instance() -> None:
+    lock_path = os.path.join(tempfile.gettempdir(), _LOCK_NAME)
+
+    def _pid_alive(pid: int) -> bool:
+        if os.name != "nt":
+            try:
+                os.kill(pid, 0)
+                return True
+            except OSError:
+                return False
+        # Windows：用 tasklist 探测该 PID 是否还在（不做权限敏感的 os.kill）。
+        import subprocess
+        try:
+            out = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                capture_output=True, text=True, timeout=5,
+            ).stdout
+            return str(pid) in out
+        except Exception:
+            return True  # 查不到就不冒险抢，按"还活着"处理
+
+    if os.path.exists(lock_path):
+        try:
+            old_pid = int(open(lock_path, encoding="utf-8").read().strip() or "0")
+        except (OSError, ValueError):
+            old_pid = 0
+        if old_pid and _pid_alive(old_pid) and old_pid != os.getpid():
+            print(f"[!] 检测到另一个 main.py 正在运行（PID {old_pid}）。", file=sys.stderr)
+            print("    包子一次只能跑一个实例（要独占串口和端口）。", file=sys.stderr)
+            print("    若确认旧实例已死，删掉这个文件后重试：", file=sys.stderr)
+            print(f"    {lock_path}", file=sys.stderr)
+            sys.exit(1)
+
+    with open(lock_path, "w", encoding="utf-8") as f:
+        f.write(str(os.getpid()))
+
+    import atexit
+    atexit.register(lambda: os.path.exists(lock_path) and os.remove(lock_path))
 
 
 def _parse_extra(argv):
@@ -112,6 +167,8 @@ def _yolo_once(cfg, frame_provider=None) -> int:
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+
+    _acquire_single_instance()
 
     print(BANNER)
     extra, rest = _parse_extra(argv)
@@ -360,7 +417,16 @@ def main(argv=None) -> int:
         td_link.send_line("TRACK:ON" if on else "TRACK:OFF")
 
     def on_reply(reply: str) -> None:
-        """新一轮开始前清空缓存（上一轮若没凑齐就丢弃，避免串轮）。"""
+        """LLM 给出的回复：打印到控制台，再清空状态缓存（避免串轮）。
+
+        之前这里只调 _new_turn()，回复文字、情绪、意图一个都没打印 ——
+        于是"包子到底听懂没、回了什么、为什么配了这个表情"在 PC 串口里
+        完全看不到，出了乱码/错答也没法定位。补上可见性。
+        """
+        print(f"[reply] {reply!r}", flush=True)
+        if reply:
+            print(f"[判] 情绪={_st.get('emo')} 意图={_st.get('intent')} "
+                  f"强度={_st.get('inten')}", flush=True)
         _new_turn()
 
     # VoiceServer 只覆盖它自己那几个回调键，不会动这几个

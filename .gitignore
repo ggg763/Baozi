@@ -19,6 +19,11 @@ photos/
 *.log
 *.mp3
 
+# 运行时状态：对话记忆画像 / 提醒去重状态，会随使用不断变化，不入库
+01_PC/pc_baozi/memory.json
+01_PC/pc_baozi/app/remind_pool_state.json
+01_PC/pc_baozi/app/remind_seen.json
+
 # SQLite：含用户习惯/日程/打卡记录，且程序首次运行会自动建空库
 *.db
 *.db-journal
