@@ -1,4 +1,12 @@
-// uart_esp.c — ESP32 -> TD1601 情感链路接收（UART3：PB18-RX / PB19-TX）
+// uart_esp.c — ESP32 -> TD1601 情感链路接收（UART3：**仅 PB18-RX**）
+//
+// ★ 2026-10-28 按实际 PCB 改为单向接收：
+//   已流片的板子上 ESP32 与 TD1601 之间**只走了一根 PB18**（ESP32 GPIO14 ->
+//   TD1601 PB18/UART3_RXD），PB19/TXD 没有引出。此前本文件按双向设计，
+//   既配 PB19 为 UART3_TXD、又开机往它发一行 banner —— 都是在驱动一个
+//   焊盘上不存在的线。现在：不配 PB19、不发 banner，与 coworker 版
+//   （UserFolder/esp_link.c，只 portb_high_mux(18,0)）的硬件假设一致。
+//   UART3 仍按标准初始化（接收必需），只是不再主动发送。
 // ============================================================================
 // 落位：**干净主线** projects(A)/baozi_LCD（main.c V2.1）。
 // 说明见 include/uart_esp.h。这里讲四个"必须知道"的实现要点 + 一条移植注意。
@@ -56,7 +64,7 @@
 #include "baozi_hooks.h"     /* BAOZI_SetEmotion() */
 
 /* ============================ 引脚与外设 ============================ */
-// PB18 = UART3_RXD（收 ESP32 的 GPIO14），PB19 = UART3_TXD（回给 ESP32）
+// PB18 = UART3_RXD（收 ESP32 的 GPIO14）——**实板只引出这一根**，见文件头。
 //   idx = 3（uart_pinmap[] 里 PB18/PB19 的 idx 列），不是引脚号。
 //   ⚠️ board_config.h 里**没有** UART3 的 EXAMPLE_PIN_* 宏（只有 UART0/1/2），
 //      所以下面直接用 soc.h 的功能枚举 —— 这正是 pin_mux_table.md 第 7.3 节的写法。
@@ -71,15 +79,16 @@
  *   Serial2.write(0xAA); Serial2.write(payload[1]);  共 2 字节，**不带换行**） */
 #define ESP_STATE_MAGIC     0xAAu
 
-/* 开机往 ESP32 回一行问候。
- * 用途：ESP32 固件 loop() 里有 `while (Serial2.available()) Serial.print(...)`，
- * 会把 TD1601 发来的字节转印到它的 USB 串口日志上 —— 所以只要这行出现在
- * ESP32 的串口监视器里，就证明 **PB19 -> ESP32 GPIO21 这根线是通的**。
- * 若没接线，这行会丢在空气里，无害。想关掉改成 0。
- * ⚠️ 必须用 csi_uart_send(&g_uart, ...) 走**UART3**；uart_protocol.h 的
- *    UART_WriteByte() 在本工程里写的是 **UART0（console/PC，与 printf 共线）**，
- *    用它等于把这行发到 PC 那边去 —— 对方一直收不到、这边还"发送成功"，很隐蔽。 */
-#define ESP_UART_TX_BANNER  1
+/* 开机往 ESP32 回一行问候 —— **已关闭**。
+ *
+ * 原设计用途：ESP32 固件 loop() 里有 `while (Serial2.available())`，会把收到的
+ * 字节转印到 USB 串口日志上，于是这行出现在 ESP32 监视器里就能证明
+ * PB19 -> ESP32 GPIO21 这根线是通的。
+ *
+ * ★ 2026-10-28 置 0 的原因：实际 PCB 只有 PB18 一根线，PB19 未引出，
+ *   发出去只会丢在空气里。保留这个宏是为了将来若补上回传线，
+ *   改成 1 即可复用现有自检手段（此时启动日志会显示 TX=PB19）。 */
+#define ESP_UART_TX_BANNER  0
 
 /* 文本行缓冲。ESP32 发来的最长一行是图片描述（CTRL_TD_TEXT），
  * 这里只留 64 字节 —— 超长就整行丢弃并计数，**绝不截断**后半段当命令执行
@@ -355,23 +364,25 @@ int uart_esp_init(void)
     s_stat.dropped      = 0;
     s_stat.last_code    = 0;
 
-    /* ① 先内部上拉，再设复用 —— 顺序与 uart_hal.c / SDK 官方示例一致。 */
+    /* ① 先内部上拉，再设复用 —— 顺序与 uart_hal.c / SDK 官方示例一致。
+     *    ★ 2026-10-28：只配 PB18。PB19 在实板上没有引出（UART3_TXD 那根线不存在），
+     *      配它等于把外设输出驱动到悬空焊盘，没有意义；且 coworker 版
+     *      UserFolder/esp_link.c 同样只处理 PB18。 */
     csi_pin_mode(PORTB, PIN18, GPIO_MODE_PULLUP);
-    csi_pin_mode(PORTB, PIN19, GPIO_MODE_PULLUP);
     csi_pin_set_mux(PORTB, PIN18, PB18_UART3_RXD);   /* 功能值 0 */
-    csi_pin_set_mux(PORTB, PIN19, PB19_UART3_TXD);   /* 功能值 0 */
 
     /* ② ⚠️ 官方 pinmux.c 在 PORTB 分支漏了 `offset -= 16`，给 PB16~PB31 配外设时
      *    功能值被写进了 IOMUX0L（应为 IOMUX0H），目标脚自己的 IOMUX0H 纹丝不动。
      *    PB18/PB19 的功能值恰好是 0、与复位默认值相同，所以"写错寄存器"碰巧
      *    等于"写对了" —— 但如果这两个字段此前被别的代码写成了非 0，引脚就配不上，
      *    而且**从寄存器上完全看不出区别**（pin_mux_table.md 第 7.2 节的结论）。
-     *    这里显式清零兜底：PB18 = IOMUX0H 的 bit4~5，PB19 = bit6~7。 */
+     *    这里显式清零兜底：PB18 = IOMUX0H 的 bit4~5。
+     *    （PB19 = bit6~7 不再处理 —— 该脚未引出，见上文 2026-10-28 说明。） */
     imx_before = ESP_REG32(ESP_IOMUX0H_B);
-    ESP_REG32(ESP_IOMUX0H_B) = imx_before & ~((3u << 4) | (3u << 6));
+    ESP_REG32(ESP_IOMUX0H_B) = imx_before & ~(3u << 4);
     imx_after = ESP_REG32(ESP_IOMUX0H_B);
     if (imx_after != imx_before) {
-        printf("[ESPUART] IOMUX0H fixed: 0x%X -> 0x%X (PB18/PB19 func -> 0)\r\n",
+        printf("[ESPUART] IOMUX0H fixed: 0x%X -> 0x%X (PB18 func -> 0)\r\n",
                (unsigned)imx_before, (unsigned)imx_after);
     }
 
@@ -411,11 +422,12 @@ int uart_esp_init(void)
     }
 
     /* ⑥ MUX 回读自检：pin_mux_table.md 反复强调"别凭感觉，要看寄存器"。
-     *    PORTCTL 的 bit18/bit19 必须为 1（=已切复用），见该文档第 8.3 节的判读表。 */
-    printf("[ESPUART] PORTCTL_B=0x%X (bit18/19 must be 1) IOMUX0H=0x%X\r\n",
+     *    PORTCTL 的 bit18 必须为 1（=已切复用），见该文档第 8.3 节的判读表。
+     *    （bit19 不再检查：PB19 未引出，本文件不配置它。） */
+    printf("[ESPUART] PORTCTL_B=0x%X (bit18 must be 1) IOMUX0H=0x%X\r\n",
            (unsigned)ESP_REG32(ESP_PORTCTL_B), (unsigned)ESP_REG32(ESP_IOMUX0H_B));
 
-    printf("[ESPUART] UART3 ready @115200 8N1: RX=PB18 (from ESP32 GPIO14), TX=PB19\r\n");
+    printf("[ESPUART] UART3 ready @115200 8N1: RX=PB18 only (TX=PB19 not wired on PCB)\r\n");
     printf("[ESPUART] expect: AA <code>  or  lines like \"EMO:HAPPY\"\r\n");
     return 0;
 }
