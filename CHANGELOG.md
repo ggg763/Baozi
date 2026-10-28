@@ -76,8 +76,8 @@ PC 侧新增 **`config.local.json`** 覆盖机制（`Config.load` 里 `config.js
 
 ### 1. 致命 bug：`discoveryLoop()` 从来没有被调用 ★
 
-**现象**：板子连上了热点（`IP=192.168.193.204, RSSI=-41 dBm`），PC 能 ping 通它、
-`http://192.168.193.204/` 能打开，但 PC 端永远等不到连接；板子串口每 5 秒刷
+**现象**：板子连上了热点（`IP=192.168.1.204, RSSI=-41 dBm`），PC 能 ping 通它、
+`http://192.168.1.204/` 能打开，但 PC 端永远等不到连接；板子串口每 5 秒刷
 `[net] 还没收到 PC 广播（当前占用兜底地址 0.0.0.0）`。
 
 **根因**：`setup()` 里调了 `discoveryBegin()`（绑定 8766）就再没人调
@@ -93,17 +93,17 @@ PC 侧新增 **`config.local.json`** 覆盖机制（`Config.load` 里 `config.js
   linkLoop();
 ```
 
-**验证**（实机，本机 PC + vivo S30 Pro mini 热点）：
+**验证**（实机，本机 PC + 手机热点）：
 
 ```
-[disc] >>> 已发现 PC: 192.168.193.232（UDP 发现成功）
+[disc] >>> 已发现 PC: 192.168.1.232（UDP 发现成功）
 [net] 已连接 PC 服务器
 ```
 
 PC 侧同时看到：
 
 ```
-[link] ESP32 已连接: 192.168.193.204:62288
+[link] ESP32 已连接: 192.168.1.204:62288
 [link] 设备上线: esp32s3cam/baozi-voice/16k-mono [+cam] fw/2026-10-28b
 [state] LISTENING
 [pipe] 检测到语音开始
@@ -161,18 +161,18 @@ PC 侧日志里能直接看出板子跑的是哪一版。启动横幅同步更�
 
 | | 改前 | 改后 |
 |---|---|---|
-| `[0]` SSID | `shubei` | `vivo S30 Pro mini` |
+| `[0]` SSID | 旧热点 | 新热点（本人手机） |
 | `[0]` 密码 | （旧） | （新，见文件） |
-| `[1]` | `lanlll` | `lanlll`（保留作备选） |
+| `[1]` | 旧备选 | 原样保留作备选 |
 
-`WIFI_NET_COUNT` 仍为 2：删掉已不存在的 `shubei`，最坏开机等待从 24 s 降到 12 s。
+`WIFI_NET_COUNT` 仍为 2：删掉已不存在的那个，最坏开机等待从 24 s 降到 12 s。
 
 **为什么不用改 IP**：ESP32 的 `SERVER_HOST` 是 `0.0.0.0`，连上网后靠 UDP 8766 向
 `255.255.255.255` 广播 `ESP32:<ip>:<port>` 找 PC。PC 侧 `discovery.py` 同理。
-所以换网段（这次从旧热点换到 `192.168.193.0/24`）只需换 SSID/密码。
+所以换网段（这次从旧热点换到 `192.168.1.0/24`）只需换 SSID/密码。
 
 **换网后必做**：`01_PC/pc_baozi/allow_firewall_lan.bat`（管理员），放行 TCP 8765 + UDP 8766。
-当前 `vivo S30 Pro mini` 被 Windows 判为「公用网络」，默认拒绝入站。
+当前热点被 Windows 判为「公用网络」，默认拒绝入站。
 
 **顺带确认的三项硬性约束**（任一不满足就连不上）：
 2.4 GHz（通道 6 ✅）、WPA2-个人 ✅、SSID 纯英文 ✅。
@@ -202,14 +202,14 @@ PC 侧日志里能直接看出板子跑的是哪一版。启动横幅同步更�
 | 编译 | 通过，0 error / 0 warning |
 | 固件体积 | 1,057,502 B = 33% of 3 MB APP |
 | 全局变量 | 104,592 B = 31%（余 223,088 B） |
-| 凭据入镜像 | `strings` 能在 bin 里搜到 `vivo S30 Pro mini` / 新密码 |
+| 凭据入镜像 | `strings` 能在 bin 里搜到 SSID / 密码明文（故本次起不再入库） |
 | 板级参数 | `FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB,CDCOnBoot=cdc` |
 
 **未验证**：实机联网、三端联调（无硬件在手）。
 
 ### ⚠️ 待处理：WiFi 密码在公开仓库里
 
-`config.h` 的明文凭据（本次的、以及历史上 `shubei` / `lanlll` 两条）以及
+`config.h` 的明文凭据（本次的、以及历史上那两条）以及
 `firmware/*.bin` 都会出现在公开仓库中。若要收紧，建议二选一：
 
 - 仓库转 Private；

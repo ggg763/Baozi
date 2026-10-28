@@ -340,7 +340,7 @@ run.bat                       # 语音 + 视觉 + 情感 + 卡片，全部拉起
 | PC 语音识别 | SenseVoiceSmall 本地缓存离线加载，`cuda:0`，0.6 s 推理 |
 | TD1601 编译 | 通过，`text 96132 / data 644 / bss 48656` |
 | ESP32 编译 | 通过（core 3.2.1-cn），1,058,082 B / 33% APP，0 警告 |
-| **ESP32 实机联网** | 通过：`WiFi 已连接 "vivo S30 Pro mini", IP=192.168.193.204, RSSI=-29 dBm` |
+| **ESP32 实机联网** | 通过：`WiFi 已连接 "<热点名>", IP=192.168.x.x, RSSI=-29 dBm` |
 | **PC ↔ ESP32 实机联调** | 通过（mock ASR/echo LLM/tone TTS）：发现 → TCP → HELLO → 麦克风音频 → VAD → 7 轮回放 |
 | **板子重启自动重连** | 通过：PC 不再需要重启，`ESP32 已连接` 可重复出现 |
 | 三端协议一致性 | 逐条比对通过（见 `04_DOCS/01_通信协议.md`） |
