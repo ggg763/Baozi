@@ -1,0 +1,200 @@
+{
+ "summary": {
+  "format": "ANM3",
+  "size": 240,
+  "scale": 2,
+  "mode": "chroma-key #00FF00 -> bg #000000 fg #FFFFFF",
+  "clips": 23,
+  "frames": 1932,
+  "raw_index_bytes": 111283200,
+  "res_bytes": 1032081,
+  "c_text_bytes": 5484234,
+  "avg_patch_pct": 18.1
+ },
+ "rows": [
+  {
+   "name": "angry_[2.0s]",
+   "frames": 63,
+   "raw_index_bytes": 3628800,
+   "changed_bytes": 1749664,
+   "res_bytes": 23770,
+   "avg_patch_pct": 12.1
+  },
+  {
+   "name": "asleep_[21.5s]",
+   "frames": 550,
+   "raw_index_bytes": 31680000,
+   "changed_bytes": 33020032,
+   "res_bytes": 305231,
+   "avg_patch_pct": 26.1
+  },
+  {
+   "name": "badminton_[1.2s]",
+   "frames": 50,
+   "raw_index_bytes": 2880000,
+   "changed_bytes": 2309504,
+   "res_bytes": 32007,
+   "avg_patch_pct": 20.0
+  },
+  {
+   "name": "confident_[0.8s]",
+   "frames": 25,
+   "raw_index_bytes": 1440000,
+   "changed_bytes": 1229120,
+   "res_bytes": 16467,
+   "avg_patch_pct": 21.3
+  },
+  {
+   "name": "cry_[1.0s, 2.0s]",
+   "frames": 80,
+   "raw_index_bytes": 4608000,
+   "changed_bytes": 2670848,
+   "res_bytes": 38545,
+   "avg_patch_pct": 14.5
+  },
+  {
+   "name": "dance_[2.5s]",
+   "frames": 63,
+   "raw_index_bytes": 3628800,
+   "changed_bytes": 3097792,
+   "res_bytes": 39812,
+   "avg_patch_pct": 21.3
+  },
+  {
+   "name": "investigate_[0.5s, 2.5s]",
+   "frames": 100,
+   "raw_index_bytes": 5760000,
+   "changed_bytes": 5080576,
+   "res_bytes": 73607,
+   "avg_patch_pct": 22.1
+  },
+  {
+   "name": "laugh_[0.5s, 1.0s]",
+   "frames": 50,
+   "raw_index_bytes": 2880000,
+   "changed_bytes": 3312576,
+   "res_bytes": 37585,
+   "avg_patch_pct": 28.8
+  },
+  {
+   "name": "leisure_[0.5s, 2.0s]",
+   "frames": 75,
+   "raw_index_bytes": 4320000,
+   "changed_bytes": 1891616,
+   "res_bytes": 22573,
+   "avg_patch_pct": 10.9
+  },
+  {
+   "name": "mock_[0.5s]",
+   "frames": 25,
+   "raw_index_bytes": 1440000,
+   "changed_bytes": 905696,
+   "res_bytes": 11572,
+   "avg_patch_pct": 15.7
+  },
+  {
+   "name": "mute_[0.5s]",
+   "frames": 25,
+   "raw_index_bytes": 1440000,
+   "changed_bytes": 866912,
+   "res_bytes": 10377,
+   "avg_patch_pct": 15.1
+  },
+  {
+   "name": "panic_[0.5s, 1.5s]",
+   "frames": 75,
+   "raw_index_bytes": 4320000,
+   "changed_bytes": 2877760,
+   "res_bytes": 48590,
+   "avg_patch_pct": 16.7
+  },
+  {
+   "name": "ponder_[0.5s]",
+   "frames": 38,
+   "raw_index_bytes": 2188800,
+   "changed_bytes": 1365984,
+   "res_bytes": 16003,
+   "avg_patch_pct": 15.6
+  },
+  {
+   "name": "question_[0.5s]",
+   "frames": 25,
+   "raw_index_bytes": 1440000,
+   "changed_bytes": 1036128,
+   "res_bytes": 11247,
+   "avg_patch_pct": 18.0
+  },
+  {
+   "name": "sad_[0.5s,1.5s]",
+   "frames": 75,
+   "raw_index_bytes": 4320000,
+   "changed_bytes": 2712352,
+   "res_bytes": 45227,
+   "avg_patch_pct": 15.7
+  },
+  {
+   "name": "shocked_[0.5s, 1.0s]",
+   "frames": 75,
+   "raw_index_bytes": 4320000,
+   "changed_bytes": 1792672,
+   "res_bytes": 21869,
+   "avg_patch_pct": 10.4
+  },
+  {
+   "name": "shy_[2.0s, 4.0s]",
+   "frames": 188,
+   "raw_index_bytes": 10828800,
+   "changed_bytes": 6670880,
+   "res_bytes": 97818,
+   "avg_patch_pct": 15.4
+  },
+  {
+   "name": "sigh_[2.0s, 4.0s]",
+   "frames": 125,
+   "raw_index_bytes": 7200000,
+   "changed_bytes": 3338400,
+   "res_bytes": 46927,
+   "avg_patch_pct": 11.6
+  },
+  {
+   "name": "smile_[0.5s]",
+   "frames": 25,
+   "raw_index_bytes": 1440000,
+   "changed_bytes": 821344,
+   "res_bytes": 9908,
+   "avg_patch_pct": 14.3
+  },
+  {
+   "name": "smile_static_[0.5s]",
+   "frames": 25,
+   "raw_index_bytes": 1440000,
+   "changed_bytes": 798560,
+   "res_bytes": 9465,
+   "avg_patch_pct": 13.9
+  },
+  {
+   "name": "snigger_[1.0s]",
+   "frames": 25,
+   "raw_index_bytes": 1440000,
+   "changed_bytes": 1393376,
+   "res_bytes": 17327,
+   "avg_patch_pct": 24.2
+  },
+  {
+   "name": "yawn_[2.0s]",
+   "frames": 75,
+   "raw_index_bytes": 4320000,
+   "changed_bytes": 5082592,
+   "res_bytes": 53234,
+   "avg_patch_pct": 29.4
+  },
+  {
+   "name": "yummy_[2.0 s]",
+   "frames": 75,
+   "raw_index_bytes": 4320000,
+   "changed_bytes": 3858560,
+   "res_bytes": 42920,
+   "avg_patch_pct": 22.3
+  }
+ ]
+}
