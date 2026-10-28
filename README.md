@@ -183,16 +183,59 @@ Arduino IDE 打开 `02_ESP32/esp32_baozi/esp32_baozi.ino`。
 | Partition Scheme | 16M Flash (3MB APP/9.9MB FATFS) |
 | USB CDC On Boot | **Enabled** | USB 模式（`USE_USB_LINK 1`）必需；WiFi 模式下不影响 |
 
-需要 **esp32 core ≥ 3.0.0**（用了 `ESP_I2S` 和 `esp_adc/adc_continuous`）。
-零第三方库，全部是 core 自带。
+零第三方库，全部是 core 自带（`WiFi` / `WebServer` / `ESP_I2S` / `esp_adc` / `esp_camera`）。
 
-不装 Arduino 也能烧（应急）：
+**core 版本**：代码原本用到了两个 3.3.0 才有的 API —— `ESP_ARDUINO_DMA_BUF_ALIGN`
+宏、`WebServer::send(code, type, Stream&, len)` 重载。现已各加一层兼容（见 `CHANGELOG.md`），
+**3.2.x 与 3.3.x 都能编**。
+
+实测编译（2026-10-28，core `esp32:esp32@3.2.1-cn`，arduino.me 镜像）：
+
+| 项 | 结果 |
+|---|---|
+| 固件体积 | 1,057,502 B = **33%** of 3 MB APP |
+| 全局变量 | 104,592 B = 31%（余 223,088 B） |
+| 警告/错误 | 0 / 0 |
 
 ```bash
-esptool.py --chip esp32s3 -p COMx -b 921600 write_flash ^
-  --flash_mode dio --flash_freq 80m --flash_size 16MB ^
-  0x0     firmware/esp32_baozi.ino.bootloader.bin ^
-  0x8000  firmware/esp32_baozi.ino.partitions.bin ^
+arduino-cli compile \
+  --fqbn "esp32:esp32:esp32s3:FlashSize=16M,PSRAM=opi,PartitionScheme=app3M_fat9M_16MB,CDCOnBoot=cdc" \
+  --additional-urls https://arduino.me/packages/esp32.json \
+  02_ESP32/esp32_baozi
+```
+
+#### 换热点（当前网络见下表）
+
+热点写死在 `02_ESP32/esp32_baozi/config.h` 的 `WIFI_SSID_LIST` / `WIFI_PASSWORD_LIST`，
+`[0]` 是主用、`[1]` 起是备选（每个最多等 `WIFI_PER_NET_TIMEOUT_MS` = 12 s，按顺序试）。
+
+| 项 | 当前值 |
+|---|---|
+| SSID | `vivo S30 Pro mini`（2.4 GHz / WPA2-个人） |
+| 备选 | `lanlll` |
+| PC 侧 `transport` | `tcp`（与 `USE_USB_LINK 0` 配对） |
+
+改完必须重烧固件（凭据编在固件常量里，不是运行时可配）。ESP32 用 UDP 8766
+向 `255.255.255.255` 广播找 PC，`SERVER_HOST` 是 `0.0.0.0` 兜底，**换网段不需要改 IP**。
+
+⚠️ 换网后 PC 侧必须放行入站，否则现象是"ESP32 连上了但 PC 一直等"：
+
+```
+右键管理员运行 01_PC/pc_baozi/allow_firewall_lan.bat      # 放行 TCP 8765 + UDP 8766
+```
+
+部分手机热点默认开启"设备隔离/AP 隔离"，会让同一热点下的两台设备互相看不见，
+需在热点设置里关掉。
+
+烧录（`firmware/` 内是本机构建的产物；旧版在 `firmware/archive_20261025/`）：
+
+```bash
+# 有 Arduino IDE：直接点 Download
+# 只有 esptool（v4/v5 通用，write_flash / write-flash 均可）：
+esptool --chip esp32s3 -p COMx -b 921600 write-flash \
+  --flash-mode dio --flash-freq 80m --flash-size 16MB \
+  0x0     firmware/esp32_baozi.ino.bootloader.bin \
+  0x8000  firmware/esp32_baozi.ino.partitions.bin \
   0x10000 firmware/esp32_baozi.ino.bin
 ```
 
@@ -238,7 +281,7 @@ run.bat                       # 语音 + 视觉 + 情感 + 卡片，全部拉起
 | PC | Windows 10/11，Python 3.11~3.13，8 GB 内存（跑 3B 模型） |
 | PC 可选 | NVIDIA GPU（CUDA 12.8 驱动）—— ASR/VL 明显加速，YOLO 无收益 |
 | PC 外部服务 | Ollama（`qwen2.5:3b` 对话、`qwen3-vl:2b` 视觉）、edge-tts 联网、wttr.in 天气 |
-| ESP32 | Arduino IDE 2.x + esp32 core ≥ 3.0.0 |
+| ESP32 | Arduino IDE 2.x + esp32 core `3.2.1-cn`（实测通过；3.3.x 亦可） |
 | TD1601 | CDK + 工具链 `XTGccElfNewlib V3.4.0` + `mingw32-make` |
 
 ---
@@ -255,12 +298,13 @@ run.bat                       # 语音 + 视觉 + 情感 + 卡片，全部拉起
 | PC 目标检测 | YOLOv8n 25 ms/帧（GPU 与 CPU 持平，小模型传输开销抵消） |
 | PC 语音识别 | SenseVoiceSmall 本地缓存离线加载，`cuda:0`，0.6 s 推理 |
 | TD1601 编译 | 通过，`text 96132 / data 644 / bss 48656` |
+| ESP32 编译 | 通过（core 3.2.1-cn），1,057,502 B / 33% APP，0 警告 |
 | 三端协议一致性 | 逐条比对通过（见 `04_DOCS/01_通信协议.md`） |
 
 ### 未验证（缺硬件）
 
-- ESP32 实际编译（本机无 Arduino core；有预编译 bin 可烧）
 - 三端联调（麦克风/喇叭/舵机/屏幕均未上电实测）
+- 新固件（含 `vivo S30 Pro mini` 凭据）尚未实机联网验证
 
 ### 已知问题
 

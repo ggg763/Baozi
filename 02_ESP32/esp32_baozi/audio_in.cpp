@@ -11,6 +11,27 @@
 #error "ADC_OVERSAMPLE 只能是 1 / 2 / 4"
 #endif
 
+// ---------------------------------------------------------------------
+//  DMA 缓冲对齐要求（core 兼容层）
+//
+//  ESP_ARDUINO_DMA_BUF_ALIGN 是 arduino-esp32 3.3.0 才加进 cores/esp32/esp32-hal.h
+//  的宏；本工程在 3.2.x 上编译时它不存在，直接报
+//  "'ESP_ARDUINO_DMA_BUF_ALIGN' was not declared in this scope"。
+//
+//  这里按上游同一套逻辑补一份兜底：有 L2 缓存按 L2 行大小，否则 L1，再否则 4 字节。
+//  与 core 3.3+ 的取值完全一致，所以在任何版本上行为都不变。
+//  （core 升到 3.3+ 后本文件的 define 不生效，自动改用 core 里的定义。）
+// ---------------------------------------------------------------------
+#ifndef ESP_ARDUINO_DMA_BUF_ALIGN
+#if defined(CONFIG_CACHE_L2_CACHE_LINE_SIZE)
+#define ESP_ARDUINO_DMA_BUF_ALIGN CONFIG_CACHE_L2_CACHE_LINE_SIZE
+#elif defined(CONFIG_CACHE_L1_CACHE_LINE_SIZE)
+#define ESP_ARDUINO_DMA_BUF_ALIGN CONFIG_CACHE_L1_CACHE_LINE_SIZE
+#else
+#define ESP_ARDUINO_DMA_BUF_ALIGN 4
+#endif
+#endif
+
 // =====================================================================
 //  麦克风采集：MAX9814（模拟）-> ESP32-S3 ADC -> 16k/16bit 单声道 PCM
 //

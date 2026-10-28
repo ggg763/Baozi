@@ -88,11 +88,11 @@
 //   · SSID 用纯英文（中文 SSID 实测报 status=6 被对方断开）
 #define WIFI_NET_COUNT  2
 static const char* const WIFI_SSID_LIST[WIFI_NET_COUNT] = {
-  "shubei",      // [0] 比赛现场
-  "lanlll",      // [1] 开发用
+  "vivo S30 Pro mini",  // [0] 当前路由：本人手机热点（2026-10-28 起）
+  "lanlll",             // [1] 开发用（备选）
 };
 static const char* const WIFI_PASSWORD_LIST[WIFI_NET_COUNT] = {
-  "wrz006611221199",
+  "gggg6666",
   "scfh86mesrfmia2",
 };
 

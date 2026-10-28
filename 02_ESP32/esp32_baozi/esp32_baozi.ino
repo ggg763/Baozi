@@ -675,24 +675,30 @@ void loop() {
 
 #if !USE_USB_LINK
 // =====================================================================
-//  眼睛：WiFi 模式下的 HTTP 传输 JPEG 用的内存流
+//  眼睛：WiFi 模式下的 HTTP 传输 JPEG（/capture 单帧，/stream MJPEG）
 // =====================================================================
-class MemoryStream : public Stream {
-public:
-  MemoryStream(const uint8_t* data, size_t len) : _data(data), _len(len), _pos(0) {}
-  size_t write(uint8_t) override { return 0; }
-  int available() override { return _len - _pos; }
-  int read() override { return (_pos < _len) ? _data[_pos++] : -1; }
-  int peek() override { return (_pos < _len) ? _data[_pos] : -1; }
-  void flush() override {}
-private:
-  const uint8_t* _data; size_t _len; size_t _pos;
-};
 
 void handleCapture() {
   if (!camera_ok || !latest_fb) { server.send(503, "text/plain", "no image"); return; }
-  MemoryStream stream(latest_fb->buf, latest_fb->len);
-  server.send(200, "image/jpeg", stream, latest_fb->len);
+
+  // 【为什么不用 server.send(code, "image/jpeg", stream, len)】
+  //   那个带 Stream& 的重载是 core 3.3.0 才加进 WebServer 的；在 3.2.x 上编译会报
+  //   "no matching function for call to 'WebServer::send(int, const char[11], MemoryStream&, size_t&)'"。
+  //   这里改成「先声明 Content-Length，再分块写裸字节」，语义等价，
+  //   且 setContentLength / sendContent 在 2.x / 3.x 全系都有。
+  //   分块是为了不把整帧 JPEG 再拷进一个 String（堆碎片 + 峰值内存翻倍）。
+  server.setContentLength(latest_fb->len);
+  server.send(200, "image/jpeg", "");
+
+  const uint8_t *p = latest_fb->buf;
+  size_t remain = latest_fb->len;
+  while (remain > 0) {
+    if (!server.client().connected()) break;                  // 对端断开就停
+    size_t n = (remain > 1024) ? 1024 : remain;
+    server.sendContent((const char *)p, n);                   // 2.x/3.x 返回 void
+    p += n;
+    remain -= n;
+  }
 }
 
 // =====================================================================
