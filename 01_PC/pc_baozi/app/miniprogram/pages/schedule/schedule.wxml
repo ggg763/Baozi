@@ -1,0 +1,50 @@
+<view class="page">
+  <view class="field">
+    <text class="label">标题</text>
+    <input class="input" placeholder="要做什么" value="{{title}}" bindinput="onTitle" />
+  </view>
+
+  <view class="field">
+    <text class="label">日期</text>
+    <picker mode="date" value="{{date}}" start="{{startDate}}" end="{{endDate}}" bindchange="onDateChange">
+      <view class="input picker">{{dateText}}</view>
+    </picker>
+  </view>
+
+  <view class="field">
+    <text class="label">时间</text>
+    <picker mode="time" value="{{time}}" bindchange="onTimeChange">
+      <view class="input picker">{{time}}</view>
+    </picker>
+  </view>
+
+  <view class="field">
+    <text class="label">提醒（提前多久）</text>
+    <view class="remind-list">
+      <view class="remind-item" wx:for="{{remindOffsets}}" wx:key="index">
+        <picker range="{{remindOptions}}" value="{{item.index}}" data-idx="{{index}}" bindchange="onRemindChange">
+          <view class="input picker">{{item.label}}</view>
+        </picker>
+        <text class="remove" data-idx="{{index}}" bindtap="removeRemind">×</text>
+      </view>
+      <view class="add-remind" bindtap="addRemind" wx:if="{{remindOffsets.length < 3}}">+ 添加一档</view>
+    </view>
+  </view>
+
+  <view class="field">
+    <text class="label">类型</text>
+    <picker range="{{typeOptions}}" value="{{typeIndex}}" bindchange="onTypeChange">
+      <view class="input picker">{{typeOptions[typeIndex]}}</view>
+    </picker>
+  </view>
+
+  <view class="field">
+    <text class="label">重复</text>
+    <picker range="{{repeatOptions}}" value="{{repeatIndex}}" bindchange="onRepeatChange">
+      <view class="input picker">{{repeatOptions[repeatIndex]}}</view>
+    </picker>
+  </view>
+
+  <view class="voice-btn btn-outline" bindtap="voiceInput">🎤 语音录入</view>
+  <view class="save-btn btn-primary" bindtap="save">{{editing ? '保存修改' : '保存'}}</view>
+</view>

@@ -1,0 +1,49 @@
+.page {
+  padding: 24rpx;
+}
+
+.field {
+  margin-bottom: 28rpx;
+}
+
+.label {
+  display: block;
+  font-size: 26rpx;
+  color: #854F0B;
+  margin-bottom: 12rpx;
+}
+
+.input {
+  background: #FAEEDA;
+  border: 1rpx solid #E8DCC0;
+  border-radius: 16rpx;
+  padding: 20rpx 24rpx;
+  font-size: 30rpx;
+  color: #412402;
+}
+
+.picker {
+  color: #412402;
+}
+
+.hint {
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: #9A6A1E;
+  background: #FFF7E8;
+  border: 2rpx dashed #E0BE86;
+  border-radius: 16rpx;
+  padding: 16rpx 20rpx;
+  margin-bottom: 28rpx;
+}
+
+.save-btn {
+  margin-top: 8rpx;
+}
+
+.loading {
+  text-align: center;
+  color: #B4B2A9;
+  font-size: 26rpx;
+  padding: 60rpx 0;
+}

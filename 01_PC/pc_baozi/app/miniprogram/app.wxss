@@ -1,0 +1,50 @@
+page {
+  --bg: #FDF6E3;
+  --card: #FAEEDA;
+  --primary: #BA7517;
+  --line: #E8DCC0;
+  --text-main: #412402;
+  --text-sub: #854F0B;
+
+  background: #FDF6E3;
+  color: #412402;
+  font-size: 28rpx;
+  line-height: 1.6;
+}
+
+/* 通用卡片 */
+.card {
+  background: #FAEEDA;
+  border: 1rpx solid #E8DCC0;
+  border-radius: 24rpx;
+  padding: 28rpx;
+  margin: 20rpx 24rpx;
+}
+
+/* 主按钮 */
+.btn-primary {
+  background: #BA7517;
+  color: #FFFFFF;
+  border-radius: 44rpx;
+  font-size: 30rpx;
+  padding: 20rpx 0;
+  text-align: center;
+}
+
+/* 次按钮（空心） */
+.btn-outline {
+  background: #FDF6E3;
+  color: #BA7517;
+  border: 1rpx solid #BA7517;
+  border-radius: 44rpx;
+  font-size: 30rpx;
+  padding: 20rpx 0;
+  text-align: center;
+}
+
+.section-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #412402;
+  margin: 24rpx 0 12rpx;
+}

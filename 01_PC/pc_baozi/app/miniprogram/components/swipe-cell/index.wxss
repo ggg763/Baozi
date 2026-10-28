@@ -1,0 +1,38 @@
+/* 左滑露出操作按钮的容器
+ *
+ * 为什么不用 wx.showActionSheet：
+ *   用户要的是"左滑出现修改按钮"，动作要跟手出现在行上，不是弹菜单。
+ * 为什么动作在上、内容在下：
+ *   内容层盖在动作层上面，往左平移 offset 就把**右边**的动作露出来。
+ *   内容层的不透明背景（#FAEEDA）是关键，不然会透出下面的按钮。
+ * ⚠️ 动作区必须锚在 right:0（贴右边缘），和 wxml 里的 translateX(-offset) 配套。
+ *   锚 left:0 + 负向平移 = 往左滑出一块空白，按钮根本不在露出的那一侧。
+ */
+:host {
+  display: block;
+}
+
+.swipe {
+  position: relative;
+  overflow: hidden;
+}
+
+.swipe-actions {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.swipe-body {
+  position: relative;
+  z-index: 1;
+  background: #FAEEDA;
+}
+
+/* 只在"松手 / 点按钮"时加过渡：拖动过程中跟手，不能有动画 */
+.swipe-body.anim {
+  transition: transform 0.22s ease;
+}

@@ -1,0 +1,182 @@
+## 第一部分： 基础信息
+name: hello_world
+version: V1.0.0
+description: hello_world 示例
+type: solution
+yoc_version: V1.0.0
+license: Apache license v2.0
+## 第二部分：依赖信息
+#           指定该组件依赖的组件及版本，版本支持条件比较，支持：>=v1.0, >v1.0, ==v1.0, <=v1.0, <v1.0, v1.0
+#           未指定条件时，默认为 ==，如 v1.0 与 ==v1.0
+# depends:                                 # <可选项> 该组件依赖其他的组件，合理的依赖才能保证组件能编译、使用
+#   - minilibc: v7.2.0
+#   - aos: >=v7.2.0
+depends:
+  - chip_td1601: V1.0.0
+  - console: V1.0.0
+  - csi: V1.0.0
+  - minilibc: V1.0.0
+  - mm: V1.0.0
+  - td1601_evb: V1.0.0
+## 第三部分：板级信息
+solution:
+  board_name: td1601_evb
+  ld_script: ""
+## 第四部分：编译连接信息
+# build_config:                            # <可选项> 编译配置项
+#   include:                               # <可选项> 编译时，影响编译器的-I 参数 ,全局有效
+#     - src                                #        include 只能是该软件包下的目录，不能使用外部目录
+#   internal_include:                      # <可选项> 编译时，影响编译器的-I 参数 ,组件内有效
+#     - include
+#   cflag: ''                              # <可选项> C 编译器所需要要的编译参数
+#   cxxflag: ''                            # <可选项> CXX 编译器所需要要的编译参数
+#   asmflag: ''                            # <可选项> 汇编器所需要要参数
+#   define:                                # <可选项> 宏定义, 增加编译器的-D 选项,如：
+#     XXX: 1                               #   -DXXX=1
+#     AAA: 1                               #   -DAAA
+#     STR: "abc"                           #   -DSTR="abc"
+#   libs:                                  # 该组件中支持的二进制静态库,如：libxxx.a, libyyy.a
+#     - xxx                                #   -lxxx
+#     - yyy                                #   -lyyy
+#   libpath:                               # 指定静态库所在的路径（相对于该组件路径）
+#     - libs                               #   -Llibs
+build_config:
+  include:
+    - include
+    - include/sys
+    - UserFolder/
+  internal_include: 
+  cflag: -Os  -g -DANIM_USE_BIN=1
+  cxxflag: -Os  -g
+  asmflag: ""
+  define: 
+  libs:
+    - m
+    # - animres     <- 位图管线(ANM3)的资源库，单它一个就 1MB！
+    #                  注释后镜像从 ~1.1MB 降到 ~100KB，烧录快很多。
+    #                  做 gif 对照实验时再打开（同时放开下面 3 个位图源文件）。
+  libpath: 
+    - UserFolder/anim
+  ldflag: "-nostartfiles -Wl,--gc-sections -lm  -Wl,-zmax-page-size=1024\n"
+# source_file:                             # <可选项> 指定参与编译的源代码文件，支持通配符，采用相对路径
+#   - src/*.c                              # 例：组件 src 目录下所有的扩展名为 c 的源代码文件
+source_file:
+  - ./*.c
+  - src/*.c
+  - UserFolder/test.c
+  - UserFolder/servo_test/servo_core.c
+  - UserFolder/servo_test/servo_range_test.c
+  - UserFolder/servo_test/servo_mvp_test.c
+  - UserFolder/servo_test/servo_dual_test.c
+  - UserFolder/movements/moves.c
+  - UserFolder/movements/moves_idle.c
+  - UserFolder/movements/moves_happy.c
+  - UserFolder/movements/moves_eight.c
+  - UserFolder/movements/moves_sad.c
+  - UserFolder/movements/moves_angry.c
+  - UserFolder/movements/moves_surprised.c
+  - UserFolder/movements/moves_loving.c
+  - UserFolder/movements/moves_bored.c
+  - UserFolder/movements/moves_sleep.c
+  - UserFolder/movements/moves_demo.c
+  - UserFolder/emotion/emotion_manager.c
+  - UserFolder/emotion/mood_fsm.c
+  - UserFolder/emotion/emotion_fsm.c
+  - UserFolder/test/ir_test.c
+  - UserFolder/test/ir_state_test.c
+  - UserFolder/test/emotion_test.c
+  - UserFolder/test/serial_min_test.c
+  - UserFolder/tracking/track_yaw.c
+  - UserFolder/tracking/track_dual.c
+  - UserFolder/gfx/gfx.c
+  - UserFolder/gfx/gfx_demo.c
+  - UserFolder/gfx/gfx_sprite_demo.c
+  # --- 位图管线（ANM3）：默认关掉。
+  #     它会把 libanimres.a 的 ~1MB 资源链进镜像，烧录非常慢。
+  #     需要做 gif 对照实验时，把下面 3 行和 libs 里的 animres 一起打开。
+  # - UserFolder/anim/anim_player.c
+  # - UserFolder/anim/anim_emo_test.c
+  # - UserFolder/anim/third_party/puff.c
+  - UserFolder/anim/face_render.c
+  - UserFolder/anim/face_model.c
+  # --- 2026-10-28 补登记：face_draw.c 是 v9 图元光栅器，
+  #     face_model.h / face_render.h 都 include 了它的头（FD_W/FD_MAX_PARTS 等），
+  #     此前同样只在 Baozi.mk 里有规则、本表漏写。
+  - UserFolder/anim/face_draw.c
+  - UserFolder/anim/face_action.c
+  # --- 合并版（2026-11）：触摸 + 卡片 UI 栈 ---
+  #     face_emo_test.c 不再编译：它自带主循环 + 自己 poll 串口，与 app_core 的
+  #     UART0 独占冲突；它提供的 face_ui_* 改由 anim/face_ui_card.c 实现。
+  #     需要单独调参数化脸时，把下一行取消注释、并同时注释 face_ui_card.c。
+  # - UserFolder/anim/face_emo_test.c
+  - UserFolder/anim/face_ui_card.c
+  - UserFolder/anim/face_app.c
+  - UserFolder/ui.c
+  - UserFolder/ui_app.c
+  - UserFolder/pomo.c
+  - UserFolder/app_core.c
+  # --- 2026-10-28 补登记：这两个文件被 main.c / ui_app.c 直接调用
+  #     （behavior_init / play_card_draw / play_card_tap），
+  #     但此前只手工写进了 Baozi.mk 的 Objects0 与编译规则，没写进本表。
+  #     后果：用 CDK 重新打开工程、重新生成 makefile 时两条规则会消失
+  #     → undefined reference to behavior_init / play_card_draw。
+  #     ⚠️ Baozi.mk 是生成产物，本表才是唯一权威源，别再只改 makefile。
+  - UserFolder/behavior.c
+  - UserFolder/play_card.c
+  - UserFolder/QSPI_test/video_tetra_test.c
+## 第五部分：配置信息
+# def_config:                              # 组件的可配置项
+#   CONFIG_DEBUG: y
+#   CONFIG_PARAM_NOT_CHECK: y
+#   CONFIG_CLI: y
+def_config:
+  CONFIG_KERNEL_NONE: 1
+  CONFIG_ARCH_INTERRUPTSTACK: 4096
+  CONFIG_DEBUG_MODE: 1
+  CONFIG_XIP: 1
+  CONFIG_BENCHMARK: 1
+  CONFIG_BENCHMARK_COREMARK: 1
+  CONFIG_BENCHMARK_DHRY: 1
+  CONFIG_CHIP_TD1601: 1
+  CONFIG_SUPPORT_TSPEND: 1
+  CONFIG_CPU_E906FD: 1
+keywords: 
+author: ""
+depends_forward:
+  - chip_td1601: V1.0.0
+  - console: V1.0.0
+  - csi: V1.0.0
+  - minilibc: V1.0.0
+  - mm: V1.0.0
+  - td1601_evb: V1.0.0
+defconfig:
+  CONFIG_ARCH_INTERRUPTSTACK: 4096
+  CONFIG_BENCHMARK: 1
+  CONFIG_BENCHMARK_COREMARK: 1
+  CONFIG_BENCHMARK_DHRY: 1
+  CONFIG_CHIP_TD1601: 1
+  CONFIG_CPU_E906FD: 1
+  CONFIG_DEBUG_MODE: 1
+  CONFIG_KERNEL_NONE: 1
+  CONFIG_SUPPORT_TSPEND: 1
+  CONFIG_XIP: 1
+link_config:
+  path: 
+  library: 
+install: 
+hidden: 
+homepage: 
+soc_config: 
+## 第六部分：安装信息
+# install:
+#   - dest: include/                       # 安装的目的路径 dest是相当路径，通常是相对于YoC SDK 安装目录
+#     source:                              # 安装源列表
+#      - src/*.h                           # 支持通配符，相对路径
+## 第七部分：导出部分
+# export:
+#   - dest: "<SOLUTION_PATH>/generated/data" # 安装的目的路径 dest是相当路径
+#     source:                                # 安装源列表
+#       - "bootimgs/boot"
+#       - "bootimgs/tee"
+#       - "bootimgs/mtb"
+#       - "configs/config.yaml"

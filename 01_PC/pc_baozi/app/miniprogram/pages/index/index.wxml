@@ -1,0 +1,66 @@
+<view class="page">
+  <!-- 顶部固定栏（滑动不跟着动） -->
+  <view class="header" style="padding-top: {{statusBarHeight}}px;">
+    <view class="header-bar" style="height: {{navBarHeight}}px; padding-right: {{rightInset}}px;">
+      <view class="add-btn-top" bindtap="goSchedule">+ 添加日程</view>
+    </view>
+  </view>
+
+  <!-- 日期分组列表（可滚动看多天） -->
+  <view class="content" style="padding-top: {{statusBarHeight + navBarHeight}}px;">
+
+    <!-- 没连上后端：下面的日程是示例数据，必须说清楚，
+         否则用户会以为「刚添加的日程没保存上」 -->
+    <view class="offline-bar" wx:if="{{offline}}">
+      <view class="offline-line">未连接后端，下面是示例日程，不是你的真实数据</view>
+      <view class="offline-line offline-line-2">请求地址：{{apiBase}}</view>
+      <view class="offline-line offline-line-2">失败原因：{{offlineMsg}}</view>
+    </view>
+
+    <view class="date-group" wx:for="{{groups}}" wx:for-item="group" wx:key="date">
+      <view class="group-header">
+        <text class="group-date">{{group.dateLabel}}</text>
+        <text class="group-count">{{group.items.length}} 件事</text>
+      </view>
+      <view class="card list">
+        <swipe-cell
+          wx:for="{{group.items}}"
+          wx:for-item="item"
+          wx:key="id"
+          class="sw-wrap"
+          id="sw-{{item.id}}"
+          action-width="{{152}}"
+        >
+          <view slot="actions" class="sw-action sw-edit" data-id="{{item.id}}" catchtap="onEditItem">修改</view>
+          <view slot="actions" class="sw-action sw-del" data-id="{{item.id}}" catchtap="onAskDelete">删除</view>
+          <view
+            class="list-item"
+            data-id="{{item.id}}"
+            data-title="{{item.title}}"
+            bindlongpress="onItemLongPress"
+          >
+            <view class="dot"></view>
+            <text class="time">{{item.time}}</text>
+            <text class="title {{item.done ? 'done' : ''}}">{{item.title}}</text>
+            <view class="check {{item.done ? 'done' : ''}}" catchtap="toggleDone" data-id="{{item.id}}">
+              <view class="tick" wx:if="{{item.done}}"></view>
+            </view>
+          </view>
+        </swipe-cell>
+      </view>
+    </view>
+    <!-- 一条日程都没有（和设置页的空态保持一致的措辞与观感） -->
+    <view class="empty" wx:if="{{groups.length === 0}}">还没有今天及以后的日程，点右上角「+ 添加日程」</view>
+    <!-- 离线时列表里是示例数据，别提示"长按删除"（那会误导用户去删示例） -->
+    <view class="list-end" wx:if="{{groups.length > 0 && !offline}}">— 左滑日程可修改 / 删除 —</view>
+  </view>
+
+  <!-- 删除确认弹窗：左下确定 / 右下取消 -->
+  <confirm-dialog
+    show="{{dlgShow}}"
+    title="确定要删除吗？"
+    desc="{{dlgDesc}}"
+    bind:confirm="onConfirmDelete"
+    bind:cancel="onCancelDelete"
+  />
+</view>

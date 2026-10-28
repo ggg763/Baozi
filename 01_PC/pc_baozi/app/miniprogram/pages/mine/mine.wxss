@@ -1,0 +1,77 @@
+.page {
+  padding-bottom: 60rpx;
+}
+
+.page-title {
+  font-size: 56rpx;
+  font-weight: 800;
+  color: #412402;
+  padding: 24rpx 32rpx 8rpx;
+}
+
+.device-name {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #412402;
+}
+
+.device-status {
+  display: flex;
+  align-items: center;
+  margin-top: 8rpx;
+}
+
+.dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  margin-right: 12rpx;
+}
+
+.dot.on {
+  background: #639922;
+}
+
+.dot.off {
+  background: #B4B2A9;
+}
+
+.status-text {
+  font-size: 24rpx;
+  color: #854F0B;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #E8DCC0;
+  font-size: 28rpx;
+  color: #412402;
+}
+
+.menu-item:last-child {
+  border-bottom: none;
+}
+
+.arrow {
+  color: #B4B2A9;
+  font-size: 32rpx;
+}
+
+.about {
+  text-align: center;
+}
+
+.about-text {
+  display: block;
+  font-size: 26rpx;
+  color: #854F0B;
+}
+
+.about-text.sub {
+  margin-top: 8rpx;
+  color: #B4B2A9;
+  font-size: 24rpx;
+}

@@ -1,0 +1,192 @@
+.page {
+  padding-bottom: 60rpx;
+}
+
+/* 顶部固定栏 */
+.header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: #FDF6E3;
+}
+
+.header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 24rpx;
+}
+
+.header-title {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #412402;
+}
+
+.add-btn-top {
+  background: #BA7517;
+  color: #FFFFFF;
+  border-radius: 40rpx;
+  padding: 14rpx 32rpx;
+  font-size: 28rpx;
+}
+
+.content {
+  padding-bottom: 40rpx;
+}
+
+.list-end {
+  text-align: center;
+  color: #B4B2A9;
+  font-size: 24rpx;
+  padding: 24rpx 0;
+}
+
+.date-group {
+  margin-bottom: 12rpx;
+}
+
+.group-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 16rpx 32rpx 8rpx;
+}
+
+.group-date {
+  font-size: 44rpx;
+  font-weight: 700;
+  color: #412402;
+}
+
+.group-count {
+  font-size: 28rpx;
+  color: #854F0B;
+}
+
+.list-item {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #E8DCC0;
+}
+
+.list-item:last-child {
+  border-bottom: none;
+}
+
+.dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #BA7517;
+  margin-right: 16rpx;
+  flex-shrink: 0;
+}
+
+.time {
+  color: #854F0B;
+  margin-right: 16rpx;
+  flex-shrink: 0;
+}
+
+.title {
+  color: #412402;
+  flex: 1;
+}
+
+.title.done {
+  text-decoration: line-through;
+  color: #B4B2A9;
+}
+
+.check {
+  width: 44rpx;
+  height: 44rpx;
+  border: 2rpx solid #BA7517;
+  border-radius: 50%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 已完成：填实焦糖 + 白勾
+   ⚠️ 勾必须用 CSS 画，不能用字符 ✓(U+2713) —— 微软雅黑缺该字形，
+      异体手机也可能缺，会显示成方块/空白（设置页早改过，首页漏了） */
+.check.done {
+  background: #BA7517;
+  border-color: #BA7517;
+}
+
+.check .tick {
+  width: 16rpx;
+  height: 8rpx;
+  border-left: 4rpx solid #FFFFFF;
+  border-bottom: 4rpx solid #FFFFFF;
+  transform: rotate(-45deg);
+  margin-top: -4rpx;
+}
+
+/* 未连后端时的说明条（和设置页保持一致的观感） */
+.offline-bar {
+  margin: 16rpx 24rpx 8rpx;
+  padding: 18rpx 24rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: #9A6A1E;
+  background: #FFF7E8;
+  border: 2rpx dashed #E0BE86;
+  border-radius: 16rpx;
+}
+
+/* 空态（与设置页 .empty 同款） */
+.empty {
+  text-align: center;
+  color: #B4B2A9;
+  font-size: 26rpx;
+  padding: 48rpx 0 16rpx;
+}
+
+.offline-line {
+  font-size: 22rpx;
+  line-height: 32rpx;
+}
+
+.offline-line-2 {
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  line-height: 30rpx;
+  color: #B08A52;
+  word-break: break-all;
+}
+
+.add-btn {
+  margin: 32rpx 24rpx 0;
+}
+
+/* ---------- 左滑露出的操作按钮（锚在行的右边缘） ----------
+   动作按钮的背景不能透明：内容层右移后它才露出来，
+   白底会显得像"没渲染好" */
+.sw-wrap:last-child .list-item {
+  border-bottom: none;
+}
+
+.sw-action {
+  width: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+  font-size: 28rpx;
+}
+
+.sw-edit {
+  background: #BA7517;
+}
+
+.sw-del {
+  background: #A32D2D;
+}

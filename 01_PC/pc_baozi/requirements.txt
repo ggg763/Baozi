@@ -1,0 +1,61 @@
+# baozi.ears&mouth — PC 端依赖
+#
+# 安装：
+#     cd D:\CDK\baozi.ears.mouth\pc
+#     python -m pip install -r requirements.txt
+#
+# 说明：按需安装。只想快速验证链路的话，最少只需要 numpy，
+#       然后用模拟后端跑：
+#         python server.py --asr-backend mock --llm-backend echo --tts-backend tone
+
+# ---- 必装 ----
+numpy>=1.24
+
+# ---- 语音识别（ASR）----
+# 默认用 SenseVoice（阿里 FunASR）：中文效果明显强于 whisper-tiny，
+# 纯本地推理，模型从 ModelScope（国内站）自动下载，不走 HuggingFace。
+funasr>=1.1
+modelscope>=1.9
+torch>=2.0
+torchaudio>=2.0
+
+# 备选：whisper 路线（想换回去再装，并用 --asr-backend faster-whisper）
+# faster-whisper>=1.0
+
+# ---- 大模型对话（走本地 Ollama 的 OpenAI 兼容接口）----
+openai>=1.0
+
+# ---- 语音合成（TTS）----
+# edge-tts 输出 MP3，miniaudio 负责解码成 16k PCM
+edge-tts>=6.1
+miniaudio>=1.59
+
+# ---- 可选：更抗噪的 VAD（装上后把 vad_backend 改成 "webrtc"）----
+# webrtcvad-wheels>=2.0
+
+# ---- 图像描述（眼睛）----
+# 取图：默认走 USB 串口（ESP32 现抓一帧回传，见 voice_server.request_jpeg）；
+#      只有 --transport tcp（WiFi 模式）才用 requests 走 HTTP /capture。
+# 下面 requests 仍需保留：weather.py（天气）也用它。
+requests>=2.28
+ollama>=0.3
+pillow>=9.0
+
+# ---- ESP32 链路（USB 串口）+ 情感下发（TD1601 串口，EMO:xxx）----
+# ★ 2026-11：ESP32 改走 USB 串口直连，pyserial 从"情感链路可选"变成
+#   【语音/图像/情感三条链路都必需】。串口自动检测见 link.py。
+pyserial>=3.5
+pypinyin>=0.53          # 同音字判断（已确认人名优先识别）
+
+# ---- 目标检测（眼睛：YOLO，本地 CPU 推理）----
+ultralytics>=8.3
+opencv-python>=4.9
+
+# ---- 组员 app 整合层（习惯/日程/提醒/小程序）----
+# app/backend 是 FastAPI 后端（手机小程序读写习惯/日程），
+# main.py 会在 --with-app（默认）时自动拉起它。
+# 不装也能跑：只是手机小程序和提醒卡片不可用，语音/视觉/情感一切照常。
+# 报错处理见 app/README.md。
+fastapi>=0.100
+uvicorn>=0.20
+

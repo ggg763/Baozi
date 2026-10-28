@@ -1,0 +1,67 @@
+.page {
+  padding: 24rpx;
+}
+
+.field {
+  margin-bottom: 28rpx;
+}
+
+.label {
+  display: block;
+  font-size: 26rpx;
+  color: #854F0B;
+  margin-bottom: 12rpx;
+}
+
+.input {
+  background: #FAEEDA;
+  border: 1rpx solid #E8DCC0;
+  border-radius: 16rpx;
+  padding: 20rpx 24rpx;
+  font-size: 30rpx;
+  color: #412402;
+}
+
+.picker {
+  color: #412402;
+}
+
+.remind-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.remind-item {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.remind-item .input {
+  flex: 1;
+}
+
+.remove {
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #BA7517;
+  font-size: 40rpx;
+}
+
+.add-remind {
+  color: #BA7517;
+  font-size: 26rpx;
+  padding: 8rpx 0;
+}
+
+.voice-btn {
+  margin: 8rpx 0 24rpx;
+}
+
+.save-btn {
+  margin-top: 8rpx;
+}

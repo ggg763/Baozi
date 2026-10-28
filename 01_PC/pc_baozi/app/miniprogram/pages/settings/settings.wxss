@@ -1,0 +1,481 @@
+.page {
+  padding-bottom: 60rpx;
+}
+
+.page-title {
+  font-size: 56rpx;
+  font-weight: 800;
+  color: #412402;
+  padding: 24rpx 32rpx 8rpx;
+}
+
+/* 习惯卡片 */
+.habit-card {
+  background: #FAEEDA;
+  border: 1rpx solid #E8DCC0;
+  border-radius: 24rpx;
+  padding: 24rpx 28rpx;
+  margin: 0;      /* 外边距挪到 .sw-wrap 上：动作区要对齐卡片右边缘，不能差 24rpx */
+}
+
+/* ---------- 左滑露出的操作按钮（锚在行的右边缘） ---------- */
+.sw-wrap {
+  display: block;
+  margin: 20rpx 24rpx;
+}
+
+.sw-action {
+  width: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+  font-size: 28rpx;
+}
+
+.sw-edit {
+  background: #BA7517;
+}
+
+/* 提醒设置里的一句说明 */
+.set-hint {
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: #B08A52;
+  padding-top: 12rpx;
+}
+
+.habit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.habit-name-row {
+  display: flex;
+  align-items: baseline;
+  gap: 16rpx;
+}
+
+.habit-name {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #412402;
+}
+
+.habit-days {
+  font-size: 24rpx;
+  color: #854F0B;
+}
+
+.days-num {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #BA7517;
+}
+
+/* 参数行 */
+.param {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid #E8DCC0;
+  font-size: 28rpx;
+  color: #412402;
+}
+
+.param:last-child {
+  border-bottom: none;
+}
+
+.value {
+  color: #BA7517;
+}
+
+/* ============ 今日打卡 ============ */
+
+/* 后端未连接提示条 */
+.offline-bar {
+  margin: 16rpx 24rpx 0;
+  padding: 18rpx 24rpx;
+  font-size: 22rpx;
+  line-height: 32rpx;
+  color: #9A6A1E;
+  background: #FFF7E8;
+  border: 2rpx dashed #E0BE86;
+  border-radius: 16rpx;
+}
+/* 排查信息两行：地址 + 失败原因，必须允许长串断行 */
+.offline-line {
+  font-size: 22rpx;
+  line-height: 32rpx;
+}
+.offline-line-2 {
+  margin-top: 6rpx;
+  font-size: 20rpx;
+  line-height: 30rpx;
+  color: #B08A52;
+  word-break: break-all;
+}
+
+/* 待确认项横幅 */
+.pend-banner {
+  margin: 16rpx 24rpx 0;
+  padding: 22rpx 26rpx;
+  background: #FFF4DF;
+  border: 2rpx solid #E9C88A;
+  border-left: 8rpx solid #BA7517;
+  border-radius: 20rpx;
+}
+
+.pend-head {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 6rpx;
+}
+
+.pend-badge {
+  font-size: 22rpx;
+  color: #FFFFFF;
+  background: #BA7517;
+  border-radius: 999rpx;
+  padding: 2rpx 16rpx;
+}
+
+.pend-count {
+  font-size: 24rpx;
+  color: #854F0B;
+}
+
+.pend-item {
+  display: flex;
+  align-items: baseline;
+  gap: 14rpx;
+  padding: 4rpx 0;
+}
+
+.pend-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #412402;
+}
+
+.pend-txt {
+  font-size: 26rpx;
+  color: #BA7517;
+}
+
+.pend-tip {
+  font-size: 22rpx;
+  color: #B4A387;
+  padding-top: 8rpx;
+}
+
+/* "今天待打卡" 小标 */
+.todo-tag {
+  font-size: 20rpx;
+  color: #BA7517;
+  background: #FFF1DA;
+  border: 1rpx solid #E9C88A;
+  border-radius: 999rpx;
+  padding: 2rpx 12rpx;
+}
+
+/* 打卡区容器（上方一条分隔线，和参数行区分开） */
+.ck-head {
+  display: flex;
+  align-items: center;
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid #E8DCC0;
+  font-size: 26rpx;
+  color: #854F0B;
+}
+
+.ck-date {
+  font-size: 24rpx;
+  color: #412402;
+  background: #FFF4DF;
+  border: 1rpx solid #E9C88A;
+  border-radius: 999rpx;
+  padding: 4rpx 20rpx;
+  margin-right: 16rpx;
+}
+
+.ck-date-past {
+  color: #FFFFFF;
+  background: #BA7517;
+  border-color: #BA7517;
+}
+
+.ck-count {
+  flex: 1;
+  font-size: 26rpx;
+}
+
+.ck-num {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #BA7517;
+}
+
+.ck-ratio {
+  font-size: 22rpx;
+  color: #BA7517;
+  border-bottom: 1rpx dashed #D9BE8E;
+  padding: 4rpx 2rpx;
+}
+
+/* 点阵：两行六列，每格约 107rpx（触摸区够大，不用瞄准） */
+.ck-grid {
+  display: flex;
+  flex-wrap: wrap;
+  padding-top: 14rpx;
+}
+
+.ck-cell {
+  width: 16.66%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10rpx 0;
+}
+
+.dot {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26rpx;
+  line-height: 1;
+}
+
+.dot-t {
+  font-size: 20rpx;
+  color: #B4A387;
+  padding-top: 6rpx;
+}
+
+.dot-done {
+  background: #BA7517;
+  color: #FFFFFF;
+}
+
+.dot-missed {
+  background: #EFE3CC;
+  color: #B4A387;
+}
+
+.dot-future {
+  background: #FDF6E3;
+  border: 2rpx solid #E0CFAA;
+  color: #C9B896;
+}
+
+.dot-pending {
+  background: #FDF6E3;
+  border: 4rpx solid #BA7517;
+}
+
+/* 打卡数据未加载时的占位（后端未连接）
+   比"整块隐藏"好：用户知道是没连上，而不是以为功能没做 */
+.ck-empty {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 16rpx;
+  padding-top: 18rpx;
+  border-top: 1rpx solid #E8DCC0;
+}
+
+.ck-empty-dot {
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 50%;
+  flex: none;
+  box-sizing: border-box;
+  background: #F5EEDF;
+  border: 3rpx dashed #DCCFB4;
+}
+
+.ck-empty-t {
+  font-size: 28rpx;
+  color: #B4A387;
+}
+
+.ck-empty-s {
+  font-size: 22rpx;
+  color: #C9B896;
+}
+
+/* 勾号 / 叉号用 CSS 画，不依赖字体（不同手机字体缺字形会变成豆腐块） */
+.tick {
+  width: 22rpx;
+  height: 11rpx;
+  border-left: 4rpx solid #FFFFFF;
+  border-bottom: 4rpx solid #FFFFFF;
+  transform: rotate(-45deg);
+  margin-top: -6rpx;
+}
+
+.tick-lg {
+  width: 30rpx;
+  height: 15rpx;
+  border-left-width: 6rpx;
+  border-bottom-width: 6rpx;
+  margin-top: -8rpx;
+}
+
+.cross {
+  position: relative;
+  width: 32rpx;
+  height: 32rpx;
+}
+
+.bar {
+  position: absolute;
+  left: 0;
+  top: 14rpx;
+  width: 32rpx;
+  height: 5rpx;
+  background: #FFFFFF;
+  border-radius: 3rpx;
+}
+
+.bar-a { transform: rotate(45deg); }
+.bar-b { transform: rotate(-45deg); }
+
+/* 图例 */
+.ck-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx 20rpx;
+  padding-top: 10rpx;
+}
+
+.lg {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 20rpx;
+  color: #B4A387;
+}
+
+.lg-dot {
+  width: 20rpx;
+  height: 20rpx;
+  border-radius: 50%;
+  flex: none;
+  box-sizing: border-box;
+}
+
+/* 单次型：圆圈 + 文案 */
+.ck-single {
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+  margin-top: 16rpx;
+  padding-top: 18rpx;
+  border-top: 1rpx solid #E8DCC0;
+}
+
+.ring {
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 50%;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 38rpx;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+/* 待打卡：焦糖描边空心 —— 一眼看到"这里要你点一下" */
+.ring-pending {
+  background: #FDF6E3;
+  border: 5rpx solid #BA7517;
+}
+
+.ring-done {
+  background: #BA7517;
+  color: #FFFFFF;
+}
+
+.ring-missed {
+  background: #E5DAC4;
+  color: #FFFFFF;
+}
+
+.ring-future {
+  background: #FDF6E3;
+  border: 3rpx solid #E0CFAA;
+}
+
+.ck-single-txt {
+  display: flex;
+  flex-direction: column;
+}
+
+.ck-single-title {
+  font-size: 28rpx;
+  color: #412402;
+}
+
+.ck-single-sub {
+  font-size: 22rpx;
+  color: #B4A387;
+  padding-top: 2rpx;
+}
+
+.hint {
+  font-size: 22rpx;
+  color: #B4B2A9;
+  padding-top: 12rpx;
+}
+
+.city-input {
+  text-align: right;
+  color: #BA7517;
+  font-size: 28rpx;
+  width: 200rpx;
+}
+
+.add-habit {
+  margin: 24rpx 24rpx 8rpx;
+}
+
+/* 空状态 */
+.empty {
+  text-align: center;
+  color: #B4B2A9;
+  font-size: 26rpx;
+  padding: 48rpx 0 16rpx;
+}
+
+/* 长按删除提示 */
+.longpress-tip {
+  text-align: center;
+  font-size: 22rpx;
+  color: #B4B2A9;
+  padding: 12rpx 0 0;
+}
+
+.group-title {
+  font-size: 26rpx;
+  color: #854F0B;
+  margin: 28rpx 32rpx 8rpx;
+}
+
+.card {
+  background: #FAEEDA;
+  border: 1rpx solid #E8DCC0;
+  border-radius: 24rpx;
+  padding: 8rpx 28rpx;
+  margin: 0 24rpx 20rpx;
+}

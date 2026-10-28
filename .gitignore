@@ -1,0 +1,53 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv.*/
+venv/
+
+# ---------- 模型权重（首次运行自动下载，不入库）----------
+# 交付包里保留了一份 yolov8n.pt 方便离线使用，但 Git 不跟踪：
+# 二进制权重每次改动都会在历史里存一整份。
+yolov8n.pt
+weights/
+
+# ---------- 运行产物 ----------
+captured.jpg
+photos/
+*.wav
+*.log
+*.mp3
+
+# SQLite：含用户习惯/日程/打卡记录，且程序首次运行会自动建空库
+*.db
+*.db-journal
+*.db-wal
+
+# ---------- 生成物 / 编译产物 ----------
+*.a
+face_report.json
+report.json
+
+# ---------- 编辑器 / 系统 ----------
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
+
+# ---------- TD1601 构建产物 ----------
+# 子目录 03_TD1601/baozi/.gitignore 已覆盖，这里兜底
+Obj/
+Lst/
+.cache/
+.cdk/
+*.o
+*.d
+*.i
+*.elf
+*.ihex
+*.bin
+*.hex
+*.map
+*.asm
+!02_ESP32/esp32_baozi/firmware/*.bin

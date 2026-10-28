@@ -1,0 +1,15 @@
+<view class="swipe">
+  <view class="swipe-actions" style="width: {{actionWidth}}px;">
+    <slot name="actions"></slot>
+  </view>
+  <view
+    class="swipe-body {{animating ? 'anim' : ''}}"
+    style="transform: translateX(-{{offset}}px);"
+    bindtouchstart="onTouchStart"
+    bindtouchmove="onTouchMove"
+    bindtouchend="onTouchEnd"
+    bindtouchcancel="onTouchEnd"
+  >
+    <slot></slot>
+  </view>
+</view>

@@ -1,0 +1,88 @@
+<view class="page">
+  <view class="loading" wx:if="{{loading}}">读取中…</view>
+
+  <block wx:else>
+    <view class="field">
+      <text class="label">习惯名称</text>
+      <input class="input" placeholder="如：喝水 / 锻炼 / 背单词" value="{{name}}" bindinput="onName" />
+    </view>
+
+    <view class="field">
+      <text class="label">提醒方式</text>
+      <picker range="{{typeOptions}}" value="{{typeIndex}}" bindchange="onType">
+        <view class="input picker">{{typeOptions[typeIndex]}}</view>
+      </picker>
+    </view>
+
+    <!-- 作息型：一天一次，晚上到点提醒 -->
+    <block wx:if="{{type === 'sleep'}}">
+      <view class="field">
+        <text class="label">睡觉时间</text>
+        <picker mode="time" value="{{sleep}}" bindchange="onSleep">
+          <view class="input picker">{{sleep}}</view>
+        </picker>
+      </view>
+      <view class="field">
+        <text class="label">起床时间</text>
+        <picker mode="time" value="{{wake}}" bindchange="onWake">
+          <view class="input picker">{{wake}}</view>
+        </picker>
+      </view>
+    </block>
+
+    <!-- 间隔型：一天多次，每次各提醒一次 -->
+    <block wx:elif="{{type === 'interval'}}">
+      <view class="field">
+        <text class="label">提醒间隔</text>
+        <picker range="{{intervalOptions}}" value="{{intervalIndex}}" bindchange="onInterval">
+          <view class="input picker">每 {{interval}} 分钟</view>
+        </picker>
+      </view>
+      <view class="field">
+        <text class="label">开始时间</text>
+        <picker mode="time" value="{{start}}" bindchange="onStart">
+          <view class="input picker">{{start}}</view>
+        </picker>
+      </view>
+      <view class="field">
+        <text class="label">结束时间（这一刻不再提醒）</text>
+        <picker mode="time" value="{{end}}" bindchange="onEnd">
+          <view class="input picker">{{end}}</view>
+        </picker>
+      </view>
+      <view class="field">
+        <text class="label">一天达标线</text>
+        <picker range="{{ratioOptions}}" value="{{ratioIndex}}" bindchange="onRatio">
+          <view class="input picker">完成 {{ratioOptions[ratioIndex]}} 算达标</view>
+        </picker>
+      </view>
+    </block>
+
+    <!-- 时间点型：一天一次，固定时刻 -->
+    <block wx:else>
+      <view class="field">
+        <text class="label">提醒时间</text>
+        <picker mode="time" value="{{time}}" bindchange="onTime">
+          <view class="input picker">{{time}}</view>
+        </picker>
+      </view>
+      <view class="field">
+        <text class="label">重复</text>
+        <picker range="{{repeatOptions}}" value="{{repeatIndex}}" bindchange="onRepeat">
+          <view class="input picker">{{repeat}}</view>
+        </picker>
+      </view>
+    </block>
+
+    <view class="field">
+      <text class="label">提前多久提醒</text>
+      <picker range="{{leadOptions}}" value="{{leadIndex}}" bindchange="onLead">
+        <view class="input picker">{{leadOptions[leadIndex]}}</view>
+      </picker>
+    </view>
+
+    <view class="hint">提前提醒的意思是：到点之前先把话说在前面。喝水这类一天十几次的，建议不提前；作息、锻炼提前一点更从容。</view>
+
+    <view class="save-btn btn-primary" bindtap="save">保存</view>
+  </block>
+</view>

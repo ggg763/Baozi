@@ -1,0 +1,11 @@
+<!-- 通用确认弹窗：遮罩 + 居中面板 + 按钮行（左确定 / 右取消） -->
+<view class="dlg-mask" wx:if="{{show}}" bindtap="onCancel" catchtouchmove="noop">
+  <view class="dlg-box" catchtap="noop">
+    <view class="dlg-title">{{title}}</view>
+    <view class="dlg-desc" wx:if="{{desc}}">{{desc}}</view>
+    <view class="dlg-actions">
+      <view class="dlg-btn dlg-confirm" bindtap="onConfirm" hover-class="dlg-hover">{{confirmText}}</view>
+      <view class="dlg-btn dlg-cancel" bindtap="onCancel" hover-class="dlg-hover">{{cancelText}}</view>
+    </view>
+  </view>
+</view>

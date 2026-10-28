@@ -1,0 +1,14 @@
+# 全部按二进制原样存储，禁止 Git 做 LF/CRLF 自动转换。
+#
+# 原因：这是跨平台嵌入式工程（Windows 上的 CDK + Arduino，部分脚本是 .bat）。
+# 源文件换行符被 Git 改写会让后续 diff 全变脏，也可能影响 .bat / .sh 的行为。
+# 2026-10-28 实测过：某个编辑器把 package.yaml 整体从 CRLF 改成 LF，
+# 造成 346 行"假改动"，掩盖了真正修改的 12 行。
+* -text
+
+# 明确标记为二进制的文件
+*.bin   binary
+*.pt    binary
+*.png   binary
+*.jpg   binary
+*.gif   binary

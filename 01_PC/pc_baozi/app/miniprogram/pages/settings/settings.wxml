@@ -1,0 +1,225 @@
+<view class="page">
+  <view class="page-title">习惯</view>
+
+  <!-- 后端未连接：打卡判定只有后端一份，前端算不出来，所以宁可不显示也不给假数据 -->
+  <view class="offline-bar" wx:if="{{offline}}">
+    <view class="offline-line">未连接后端，打卡数据暂不可用（习惯设置仍可修改，联网后自动同步）</view>
+    <view class="offline-line offline-line-2">请求地址：{{apiBase}}</view>
+    <view class="offline-line offline-line-2">失败原因：{{offlineMsg}}</view>
+  </view>
+
+  <!-- 待确认项横幅（如"昨晚的睡觉还没确认"） -->
+  <view class="pend-banner" wx:if="{{pendingItems.length > 0}}">
+    <view class="pend-head">
+      <text class="pend-badge">待确认</text>
+      <text class="pend-count">{{pendingItems.length}} 项</text>
+    </view>
+    <view class="pend-item" wx:for="{{pendingItems}}" wx:for-item="p" wx:key="key">
+      <text class="pend-name">{{p.name}}</text>
+      <text class="pend-txt">{{p.text}}</text>
+    </view>
+    <view class="pend-tip">点下方卡片上的圆圈即可确认，急着出门也可以直接在这里点</view>
+  </view>
+
+  <!-- 习惯列表：左滑露出「修改」。
+       卡片上虽然能直接改时间/间隔，但**名字和提前量改不了**，
+       所以给一个完整的编辑入口，进去能改这里没开放的那几项 -->
+  <swipe-cell
+    wx:for="{{habits}}"
+    wx:for-item="h"
+    wx:key="id"
+    class="sw-wrap"
+    id="sh-{{h.id}}"
+    action-width="{{76}}"
+  >
+    <view slot="actions" class="sw-action sw-edit" data-id="{{h.id}}" catchtap="onEditHabit">修改</view>
+    <view
+      class="habit-card"
+      data-id="{{h.id}}"
+      data-name="{{h.name}}"
+      bindlongpress="onHabitLongPress"
+    >
+    <view class="habit-head">
+      <view class="habit-name-row">
+        <text class="habit-name">{{h.name}}</text>
+        <text class="habit-days">已坚持 <text class="days-num">{{h.ck ? h.ck.streak : '—'}}</text> 天</text>
+        <text class="todo-tag" wx:if="{{h.ck && !h.ck.todayMet}}">今天待打卡</text>
+      </view>
+      <switch checked="{{h.enabled}}" data-id="{{h.id}}" color="#BA7517" bindchange="onToggle" />
+    </view>
+
+    <!-- 作息型 -->
+    <block wx:if="{{h.type === 'sleep'}}">
+      <picker mode="time" value="{{h.sleep}}" data-id="{{h.id}}" data-field="sleep" data-kind="time" bindchange="onFieldChange">
+        <view class="param"><text>睡觉时间</text><text class="value">{{h.sleep}}</text></view>
+      </picker>
+      <picker mode="time" value="{{h.wake}}" data-id="{{h.id}}" data-field="wake" data-kind="time" bindchange="onFieldChange">
+        <view class="param"><text>起床时间</text><text class="value">{{h.wake}}</text></view>
+      </picker>
+    </block>
+
+    <!-- 间隔型 -->
+    <block wx:elif="{{h.type === 'interval'}}">
+      <picker range="{{intervalOptions}}" value="{{h.intervalIndex}}" data-id="{{h.id}}" data-field="interval" data-kind="interval" bindchange="onFieldChange">
+        <view class="param"><text>提醒间隔</text><text class="value">每 {{h.interval}} 分钟</text></view>
+      </picker>
+      <picker mode="time" value="{{h.start}}" data-id="{{h.id}}" data-field="start" data-kind="time" bindchange="onFieldChange">
+        <view class="param"><text>开始时间</text><text class="value">{{h.start}}</text></view>
+      </picker>
+      <picker mode="time" value="{{h.end}}" data-id="{{h.id}}" data-field="end" data-kind="time" bindchange="onFieldChange">
+        <view class="param"><text>结束时间</text><text class="value">{{h.end}}</text></view>
+      </picker>
+    </block>
+
+    <!-- 时间点型 -->
+    <block wx:elif="{{h.type === 'point'}}">
+      <picker mode="time" value="{{h.time}}" data-id="{{h.id}}" data-field="time" data-kind="time" bindchange="onFieldChange">
+        <view class="param"><text>提醒时间</text><text class="value">{{h.time}}</text></view>
+      </picker>
+      <picker range="{{repeatOptions}}" value="{{h.repeatIndex}}" data-id="{{h.id}}" data-field="repeat" data-kind="repeat" bindchange="onFieldChange">
+        <view class="param"><text>重复</text><text class="value">{{h.repeat}}</text></view>
+      </picker>
+    </block>
+
+    <!-- ============ 今日打卡 ============ -->
+
+    <!-- 多次型：日期 + 次数 + 达标线 + 两行点阵 -->
+    <block wx:if="{{h.ck && h.ck.mode === 'multi'}}">
+      <view class="ck-head">
+        <picker mode="date" end="{{todayStr}}" value="{{h.ck.date}}" data-hkey="{{h.key}}" bindchange="onPickDate">
+          <view class="ck-date {{h.ck.isToday ? '' : 'ck-date-past'}}">{{h.ck.dateText}}</view>
+        </picker>
+        <text class="ck-count">打卡 <text class="ck-num">{{h.ck.done}}</text>/{{h.ck.total}} 次</text>
+        <view class="ck-ratio" data-hkey="{{h.key}}" catchtap="onRatioPick">达标线 {{h.ck.minRatioText}}</view>
+      </view>
+
+      <view class="ck-grid">
+        <view
+          class="ck-cell"
+          wx:for="{{h.ck.slots}}"
+          wx:for-item="s"
+          wx:key="slot"
+          data-hkey="{{h.key}}"
+          data-slot="{{s.slot}}"
+          data-date="{{h.ck.date}}"
+          data-state="{{s.state}}"
+          catchtap="onSlotTap"
+          catchlongpress="onSlotUndo"
+        >
+          <view class="dot dot-{{s.state}}">
+            <view class="tick" wx:if="{{s.state === 'done'}}"></view>
+          </view>
+          <text class="dot-t">{{s.short}}</text>
+        </view>
+      </view>
+
+      <view class="ck-legend">
+        <view class="lg"><view class="lg-dot dot-done"></view><text>已完成</text></view>
+        <view class="lg"><view class="lg-dot dot-missed"></view><text>已错过·点一下补</text></view>
+        <view class="lg"><view class="lg-dot dot-future"></view><text>还没到</text></view>
+        <view class="lg"><view class="lg-dot dot-pending"></view><text>窗口内</text></view>
+      </view>
+    </block>
+
+    <!-- 单次型：三态圆圈 + 文案 -->
+    <block wx:elif="{{h.ck}}">
+      <view class="ck-single">
+        <view
+          class="ring ring-{{h.ck.state}}"
+          data-hkey="{{h.key}}"
+          data-slot="main"
+          data-date="{{h.ck.date}}"
+          data-state="{{h.ck.state}}"
+          catchtap="onSlotTap"
+          catchlongpress="onSlotUndo"
+        >
+          <view class="tick tick-lg" wx:if="{{h.ck.state === 'done'}}"></view>
+          <view class="cross" wx:elif="{{h.ck.state === 'missed'}}">
+            <view class="bar bar-a"></view>
+            <view class="bar bar-b"></view>
+          </view>
+        </view>
+        <view class="ck-single-txt">
+          <text class="ck-single-title">{{h.ck.text}}</text>
+          <text class="ck-single-sub">{{h.ck.sub}}</text>
+        </view>
+      </view>
+    </block>
+
+    <!-- 打卡数据没拿到（后端没连上）：留个空位说明原因，不要整块消失
+         —— 整块藏掉会让用户以为"这功能根本没做" -->
+    <view class="ck-empty" wx:else>
+      <view class="ck-empty-dot"></view>
+      <text class="ck-empty-t">打卡数据未加载</text>
+      <text class="ck-empty-s">后端未连接</text>
+    </view>
+
+    <!-- 间隔型提示放在点阵下面，和原来位置一致 -->
+    <view class="hint" wx:if="{{h.type === 'interval'}}">只在 {{h.start}} ~ {{h.end}} 之间提醒<block wx:if="{{h.ck}}">，共 {{h.ck.total}} 次</block></view>
+    </view>
+  </swipe-cell>
+
+  <view class="empty" wx:if="{{habits.length === 0}}">还没有习惯，点下面添加一个</view>
+
+  <!-- 添加习惯 -->
+  <view class="add-habit btn-outline" bindtap="addHabit">+ 添加习惯</view>
+  <view class="longpress-tip">点一下圆圈打卡，再点一下取消 · 左滑可修改 · 长按卡片可删除</view>
+
+  <!-- 提醒设置：这些值存后端（GET/PUT /api/v1/settings），出不出声由"播报端"决定并回读。
+       ⚠️ 播报端到底是 PC 还是板子（喇叭接在板子上）尚未定，见方案讨论 —— 
+       不管哪种，这里的开关都必须以服务端配置为准，不能各端各自兜默认值。 -->
+  <view class="group-title">提醒设置</view>
+  <view class="card">
+    <view class="param">
+      <text>免打扰</text>
+      <switch checked="{{remind.enabled}}" color="#BA7517" bindchange="onQuietToggle" />
+    </view>
+    <block wx:if="{{remind.enabled}}">
+      <picker mode="time" value="{{remind.start}}" bindchange="onQuietStart">
+        <view class="param"><text>免打扰开始</text><text class="value">{{remind.start}}</text></view>
+      </picker>
+      <picker mode="time" value="{{remind.end}}" bindchange="onQuietEnd">
+        <view class="param"><text>免打扰结束</text><text class="value">{{remind.end}}</text></view>
+      </picker>
+      <view class="param">
+        <text>睡觉提醒可穿透</text>
+        <switch checked="{{remind.exemptSleep}}" color="#BA7517" bindchange="onExemptToggle" />
+      </view>
+    </block>
+    <picker range="{{cooldownOptions}}" value="{{remind.cooldownIndex}}" bindchange="onCooldownChange">
+      <view class="param"><text>两次播报至少间隔</text><text class="value">{{cooldownOptions[remind.cooldownIndex]}}</text></view>
+    </picker>
+    <view class="set-hint">免打扰时段内既不出声也不弹卡。改完约一分钟内生效。</view>
+  </view>
+
+  <!-- 其他功能 -->
+  <view class="group-title">其他功能</view>
+  <view class="card">
+    <view class="param">
+      <text>天气播报</text>
+      <switch checked="{{other.weather.enabled}}" color="#BA7517" bindchange="onWeatherToggle" />
+    </view>
+    <picker mode="time" value="{{other.weather.time}}" bindchange="onWeatherTime">
+      <view class="param"><text>播报时间</text><text class="value">{{other.weather.time}}</text></view>
+    </picker>
+    <view class="param">
+      <text>城市</text>
+      <input class="city-input" value="{{other.weather.city}}" bindinput="onCity" bindblur="onCityBlur" />
+    </view>
+    <picker range="{{pomodoroOptions}}" value="{{pomodoroIndex}}" bindchange="onPomodoroChange">
+      <view class="param"><text>番茄钟时长</text><text class="value">{{other.study.pomodoro}} 分钟</text></view>
+    </picker>
+    <picker range="{{restOptions}}" value="{{restIndex}}" bindchange="onRestChange">
+      <view class="param"><text>休息时长</text><text class="value">{{other.study.rest}} 分钟</text></view>
+    </picker>
+  </view>
+
+  <!-- 删除确认弹窗：左下确定 / 右下取消 -->
+  <confirm-dialog
+    show="{{dlgShow}}"
+    title="确定要删除吗？"
+    desc="{{dlgDesc}}"
+    bind:confirm="onConfirmDelete"
+    bind:cancel="onCancelDelete"
+  />
+</view>

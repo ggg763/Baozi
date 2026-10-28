@@ -1,0 +1,72 @@
+/* 通用确认弹窗样式（暖色拟物风，与 app.wxss 配色一致） */
+
+.dlg-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(65, 36, 2, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+
+.dlg-box {
+  width: 560rpx;
+  background: #FFFDF6;
+  border: 1rpx solid #E8DCC0;
+  border-radius: 32rpx;
+  padding: 44rpx 36rpx 32rpx;
+  box-shadow: 0 12rpx 40rpx rgba(65, 36, 2, 0.18);
+}
+
+.dlg-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #412402;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.dlg-desc {
+  font-size: 26rpx;
+  color: #854F0B;
+  text-align: center;
+  margin-top: 16rpx;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.dlg-actions {
+  display: flex;
+  flex-direction: row;
+  margin-top: 40rpx;
+}
+
+.dlg-btn {
+  flex: 1;
+  text-align: center;
+  font-size: 30rpx;
+  padding: 20rpx 0;
+  border-radius: 44rpx;
+}
+
+/* 左下：确定（实心焦糖，破坏性操作主按钮） */
+.dlg-confirm {
+  background: #BA7517;
+  color: #FFFFFF;
+  margin-right: 20rpx;
+}
+
+/* 右下：取消（空心） */
+.dlg-cancel {
+  background: #FDF6E3;
+  color: #BA7517;
+  border: 1rpx solid #BA7517;
+}
+
+.dlg-hover {
+  opacity: 0.78;
+}

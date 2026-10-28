@@ -1,0 +1,8 @@
+{
+  "navigationStyle": "custom",
+  "navigationBarTitleText": "包子",
+  "usingComponents": {
+    "confirm-dialog": "/components/confirm-dialog/index",
+    "swipe-cell": "/components/swipe-cell/index"
+  }
+}

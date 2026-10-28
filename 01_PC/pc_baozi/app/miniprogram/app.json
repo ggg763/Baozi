@@ -1,0 +1,44 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/schedule/schedule",
+    "pages/habit-edit/habit-edit",
+    "pages/settings/settings",
+    "pages/mine/mine"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#FDF6E3",
+    "navigationBarTitleText": "包子",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#FDF6E3",
+    "backgroundTextStyle": "dark"
+  },
+  "tabBar": {
+    "color": "#B4B2A9",
+    "selectedColor": "#BA7517",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "首页",
+        "iconPath": "images/home.png",
+        "selectedIconPath": "images/home_active.png"
+      },
+      {
+        "pagePath": "pages/settings/settings",
+        "text": "习惯",
+        "iconPath": "images/gear.png",
+        "selectedIconPath": "images/gear_active.png"
+      },
+      {
+        "pagePath": "pages/mine/mine",
+        "text": "我的",
+        "iconPath": "images/baozi.png",
+        "selectedIconPath": "images/baozi_active.png"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}
