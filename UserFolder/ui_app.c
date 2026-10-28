@@ -136,9 +136,9 @@ static void remind_draw(void)
         ui_add_text((int16_t)(240 - w / 2), 194, "REMINDER", 1, UI_COL_SUB);
     }
 
-    /* 时间大字（与卡片页顶部时钟同款 scale 2）*/
+    /* 时间大字（与卡片页顶部时钟同款，圆角数码）*/
     {
-        static char tbuf[6];           /* static：ui_add_text 只存指针 */
+        static char tbuf[6];           /* static：ui_add_clock 直接取字形，但仍沿用静态缓冲 */
         int w;
         tbuf[0] = (char)('0' + g_remind_hh / 10);
         tbuf[1] = (char)('0' + g_remind_hh % 10);
@@ -146,8 +146,8 @@ static void remind_draw(void)
         tbuf[3] = (char)('0' + g_remind_mm / 10);
         tbuf[4] = (char)('0' + g_remind_mm % 10);
         tbuf[5] = '\0';
-        w = ui_text_width(tbuf, 2);
-        ui_add_text((int16_t)(240 - w / 2), 220, tbuf, 2, C_TITLE);
+        w = ui_clock_width(tbuf, 48);
+        ui_add_clock((int16_t)(240 - w / 2), 216, tbuf, 48, C_TITLE);
     }
 
     /* 中文标题点阵，2x 放大成 32px 大字（与日程页标题同款）*/
@@ -403,12 +403,14 @@ void ui_cards_show(int page)
     ui_set_bg_gradient(C_BG_TOP, C_BG_MID, C_BG_BOT);
 
     /* 顶部当前时间：由 PC 对时下发（0x10），未对时显示 --:--。
-     * tbuf 必须是 static —— ui_add_text 只存指针，取字形发生在 ui_flush。 */
+     * 用圆角数码而不是 ui_add_text(scale 2)：12×24 点阵放大就是 2×2 硬方块，
+     * 屏上每个台阶都看得见（用户 2026-10-28 反馈）。v2.2 起改成本文件的
+     * ui_add_clock()，笔画是圆角矩形，边缘是圆的。 */
     {
         static char tbuf[6];
         habit_clock_hhmm(tbuf);
-        w = ui_text_width(tbuf, 2);
-        ui_add_text((int16_t)((480 - w) / 2), 26, tbuf, 2, C_TITLE);
+        w = ui_clock_width(tbuf, 48);
+        ui_add_clock((int16_t)((480 - w) / 2), 24, tbuf, 48, C_TITLE);
     }
 
     /* 页码圆点（v2.1 起 5 页：TODAY / TIMER / HABIT / PLAY / NET）*/

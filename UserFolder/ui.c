@@ -50,7 +50,10 @@ static uint16_t g_segB[UI_SEG_ROWS][UI_SZ];
 #define UI_MAX_RECT   24
 #define UI_MAX_TEXT   48     /* 文字：数字 + 标签 + 按钮，留足余量 */
 #define UI_MAX_CIRCLE 64     /* 圆：见上方说明，必须 >= 40 */
-#define UI_MAX_ROUND  64     /* 圆角块（卡片/按钮/阴影，一次界面用量最大）*/
+#define UI_MAX_ROUND  96     /* 圆角块：v2.2 起时钟用圆角数码画，一个 8 字符的
+                              * "00:00:00" 就要 6×7 = 42 个块，再加卡片/按钮就顶到
+                              * 原来 64 的上限 —— 超了会**静默丢弃**后面的元素
+                              * （实测：番茄钟大数字最后两位直接不显示）。*/
 #define UI_MAX_ARC    4      /* 圆弧（进度环）*/
 #define UI_MAX_BITMAP 12     /* 1bpp 点阵块（汉字名，HABIT 卡片每行一个）*/
 
@@ -401,6 +404,168 @@ int ui_text_width(const char *s, int scale)
     }
     /* 字符宽 + 字符间 1 个 scale 间距 */
     return n * UI_CHAR_W * scale + (n - 1) * scale;
+}
+
+/* ==================== 圆角数码（七段笔画） ====================
+ *
+ * 七段编号（与 k_clk_seg 位序一致）：
+ *      aaaa
+ *     f    b
+ *     f    b
+ *      gggg
+ *     e    c
+ *     e    c
+ *      dddd
+ *
+ * 几何：每个笔画都是一个圆角矩形，横笔高 = 竖笔宽 = t，圆角半径 = t/2
+ * → 两端的圆头是半圆，所以 48px 也好 120px 也好都没有台阶。
+ * 竖笔高度取 h/2 并且**跨过中间那条横笔**，相邻笔画的圆头互相咬合，
+ * 拐角不会出现缺口（这是七段数码最容易做难看的地方）。
+ */
+static const uint8_t k_clk_seg[10] = {
+    /*     abcdefg  */
+    0x3F,  /* 0: a b c d e f   */
+    0x06,  /* 1:   b c         */
+    0x5B,  /* 2: a b   d e   g */
+    0x4F,  /* 3: a b c d     g */
+    0x66,  /* 4:   b c   f   g */
+    0x6D,  /* 5: a   c d f   g */
+    0x7D,  /* 6: a   c d e f g */
+    0x07,  /* 7: a b c         */
+    0x7F,  /* 8: 全部          */
+    0x6F,  /* 9: a b c d   f g */
+};
+
+/* 比例（相对数字高度 h）：笔画厚度 / 数字宽 / 字距 / 冒号宽 / '1' 的格子宽 */
+#define CLK_THICK(h)   ((h) * 20 / 100)
+#define CLK_DIGIT_W(h) ((h) * 52 / 100)
+#define CLK_GAP(h)     ((h) * 11 / 100)
+#define CLK_COLON_W(h) ((h) * 24 / 100)
+/* '1' 只有两条竖笔，占满整格会在左右各留一大块空白（"09:41" 看着像
+ * "09:4   1"）。给它一个窄格，并且**宽度计算要用同一个值**，否则居中会偏。 */
+#define CLK_ONE_W(h)   ((h) * 38 / 100)
+
+static void clock_digit(int16_t x, int16_t y, int16_t w, int16_t h,
+                        int16_t t, uint8_t seg, uint16_t color)
+{
+    int16_t r    = (int16_t)(t / 2);
+    int16_t hw   = (int16_t)(w - t);        /* 横笔长度（两端各收 t/2） */
+    int16_t half = (int16_t)(h / 2);
+    int16_t mid  = (int16_t)((h - t) / 2);
+    /* 竖笔要比半高多伸 t/2：两个胶囊若是**尖端对尖端**相接，交界处会收成
+     * 一个"腰"（'0' 的左右两边中间会有个缺口，'2' 的拐角会断开）。
+     * 多伸半个笔画让它们真正重叠，视觉上才是一根连续的边。 */
+    int16_t vlen = (int16_t)(half + t / 2);
+
+    if (seg & 0x01) {                       /* a 上 */
+        ui_add_round_fill((int16_t)(x + t / 2), y, hw, t, r, color);
+    }
+    if (seg & 0x40) {                       /* g 中 */
+        ui_add_round_fill((int16_t)(x + t / 2), (int16_t)(y + mid), hw, t, r, color);
+    }
+    if (seg & 0x08) {                       /* d 下 */
+        ui_add_round_fill((int16_t)(x + t / 2), (int16_t)(y + h - t), hw, t, r, color);
+    }
+    if (seg & 0x20) {                       /* f 左上 */
+        ui_add_round_fill(x, y, t, vlen, r, color);
+    }
+    if (seg & 0x02) {                       /* b 右上 */
+        ui_add_round_fill((int16_t)(x + w - t), y, t, vlen, r, color);
+    }
+    if (seg & 0x10) {                       /* e 左下 */
+        ui_add_round_fill(x, (int16_t)(y + half - t / 2), t, vlen, r, color);
+    }
+    if (seg & 0x04) {                       /* c 右下 */
+        ui_add_round_fill((int16_t)(x + w - t), (int16_t)(y + half - t / 2),
+                          t, vlen, r, color);
+    }
+}
+
+void ui_add_clock(int16_t x, int16_t y, const char *s, int16_t h, uint16_t color)
+{
+    int16_t t     = (int16_t)CLK_THICK(h);
+    int16_t w     = (int16_t)CLK_DIGIT_W(h);
+    int16_t gap   = (int16_t)CLK_GAP(h);
+    int16_t cw    = (int16_t)CLK_COLON_W(h);
+    int16_t cx    = x;
+    int     first = 1;
+
+    if (s == 0 || h <= 0) {
+        return;
+    }
+    if (t < 2) {
+        t = 2;
+    }
+    if (w < t * 2) {
+        w = (int16_t)(t * 2);
+    }
+
+    for (; *s != '\0'; s++) {
+        if (!first) {
+            cx = (int16_t)(cx + gap);
+        }
+        first = 0;
+
+        if (*s == '1') {
+            /* 窄格 + 居中：七段的 1 只有右侧两条竖笔，占满整格会左右各留
+             * 一大块空白，与前后字符脱开。 */
+            int16_t ow = (int16_t)CLK_ONE_W(h);
+            if (ow < t) {
+                ow = t;
+            }
+            clock_digit((int16_t)(cx + (ow - t) / 2), y, ow, h, t,
+                        k_clk_seg[1], color);
+            cx = (int16_t)(cx + ow);
+        } else if (*s >= '0' && *s <= '9') {
+            clock_digit(cx, y, w, h, t, k_clk_seg[*s - '0'], color);
+            cx = (int16_t)(cx + w);
+        } else if (*s == ':') {
+            int16_t r = (int16_t)(t / 2);
+            ui_add_circle((int16_t)(cx + cw / 2), (int16_t)(y + h * 3 / 10),
+                          r, r, 1, color);
+            ui_add_circle((int16_t)(cx + cw / 2), (int16_t)(y + h * 7 / 10),
+                          r, r, 1, color);
+            cx = (int16_t)(cx + cw);
+        } else if (*s == '-') {
+            /* 未对时时显示的 "--:--"：只画中间那横 */
+            ui_add_round_fill((int16_t)(cx + t / 2), (int16_t)(y + (h - t) / 2),
+                              (int16_t)(w - t), t, (int16_t)(t / 2), color);
+            cx = (int16_t)(cx + w);
+        } else {
+            cx = (int16_t)(cx + w / 2);     /* 空格/未知字符：占位不画 */
+        }
+    }
+}
+
+int ui_clock_width(const char *s, int16_t h)
+{
+    int16_t w   = (int16_t)CLK_DIGIT_W(h);
+    int16_t gap = (int16_t)CLK_GAP(h);
+    int16_t cw  = (int16_t)CLK_COLON_W(h);
+    int t_min   = CLK_THICK(h);
+    int total   = 0;
+    int n       = 0;
+
+    if (s == 0 || h <= 0) {
+        return 0;
+    }
+    for (; *s != '\0'; s++) {
+        if (n > 0) {
+            total += gap;
+        }
+        if (*s == '1') {
+            int ow = CLK_ONE_W(h);
+            total += (ow < t_min) ? t_min : ow;
+        } else if (*s >= '0' && *s <= '9') {
+            total += w;
+        } else if (*s == ':' || *s == '-') {
+            total += (*s == ':') ? cw : w;
+        } else {
+            total += w / 2;
+        }
+        n++;
+    }
+    return total;
 }
 
 /* ---------------------------------------------------------------- 矩形 */

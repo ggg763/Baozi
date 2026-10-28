@@ -164,7 +164,8 @@ static int pt_in(int x, int y, const int b[4])
     return (x >= b[0] && x <= b[0] + b[2] && y >= b[1] && y <= b[1] + b[3]);
 }
 
-/* 顶部时间大字（拟物风：卡片页顶部 时:分）*/
+/* 顶部时间大字（拟物风：卡片页顶部 时:分）
+ * v2.2：scale 参数保留（调用点仍按 2 传），实际字号映射成 h = 24*scale 的圆角数码。*/
 static void top_time(int hh, int mm, int y, int scale)
 {
     static char buf[6];
@@ -175,8 +176,9 @@ static void top_time(int hh, int mm, int y, int scale)
     buf[3] = (char)('0' + (mm / 10) % 10);
     buf[4] = (char)('0' + mm % 10);
     buf[5] = 0;
-    w = ui_text_width(buf, scale);
-    ui_add_text((int16_t)((480 - w) / 2), (int16_t)y, buf, scale, C_TITLE);
+    w = ui_clock_width(buf, (int16_t)(24 * scale));
+    ui_add_clock((int16_t)((480 - w) / 2), (int16_t)y, buf,
+                 (int16_t)(24 * scale), C_TITLE);
 }
 
 /* 大数字 + 可选环形进度（拟物风）。sec=剩余秒，total=总秒（0=不画进度环）
@@ -203,9 +205,10 @@ static void big_clock_ring(int sec, int total, int cy, int scale)
         ui_add_circle(240, (int16_t)cy, 66, 8, 0, C_TRACK);      /* 底槽 */
         ui_add_arc(240, (int16_t)cy, 66, 8, sweep, C_HILITE);    /* 进度弧 */
     }
-    w = ui_text_width(buf, scale);
-    ui_add_text((int16_t)((480 - w) / 2), (int16_t)(cy - 12 * scale),
-                buf, scale, UI_COL_TEXT);
+    /* v2.2：圆角数码。23 是旧点阵的半高（24*scale/2），用来保持纵向居中不变。 */
+    w = ui_clock_width(buf, (int16_t)(24 * scale));
+    ui_add_clock((int16_t)((480 - w) / 2), (int16_t)(cy - 12 * scale),
+                 buf, (int16_t)(24 * scale), UI_COL_TEXT);
 }
 
 /* 大数字 MM:SS（秒数），scale 5，纯文字无圆环。buf 必须 static。*/
@@ -234,8 +237,9 @@ static void big_clock_hms(int sec)
     buf[6] = (char)('0' + s / 10);
     buf[7] = (char)('0' + s % 10);
     buf[8] = 0;
-    w = ui_text_width(buf, 4);
-    ui_add_text((int16_t)((480 - w) / 2), 216, buf, 4, UI_COL_TEXT);
+    /* v2.2：圆角数码，h = 96（原 scale 4 × 24）。8 个字符 + 两个冒号 */
+    w = ui_clock_width(buf, 96);
+    ui_add_clock((int16_t)((480 - w) / 2), 216, buf, 96, UI_COL_TEXT);
 }
 
 /* 两位数字字符串（时/分/秒显示）*/
@@ -410,28 +414,28 @@ static void render_cdset(void)
     /* 时列 */
     btn(cs_h_up, "+", 2);
     two_digit(hh_str, cd_hour);
-    w = ui_text_width(hh_str, 3);
-    ui_add_text((int16_t)(120 - w / 2), 202, hh_str, 3, C_TITLE);
+    w = ui_clock_width(hh_str, 72);
+    ui_add_clock((int16_t)(120 - w / 2), 202, hh_str, 72, C_TITLE);
     btn(cs_h_dn, "-", 2);
 
-    w = ui_text_width(":", 3);
-    ui_add_text((int16_t)(180 - w / 2), 202, ":", 3, UI_COL_SUB);
+    w = ui_clock_width(":", 72);
+    ui_add_clock((int16_t)(180 - w / 2), 202, ":", 72, UI_COL_SUB);
 
     /* 分列 */
     btn(cs_m_up, "+", 2);
     two_digit(mm_str, cd_min);
-    w = ui_text_width(mm_str, 3);
-    ui_add_text((int16_t)(240 - w / 2), 202, mm_str, 3, C_TITLE);
+    w = ui_clock_width(mm_str, 72);
+    ui_add_clock((int16_t)(240 - w / 2), 202, mm_str, 72, C_TITLE);
     btn(cs_m_dn, "-", 2);
 
-    w = ui_text_width(":", 3);
-    ui_add_text((int16_t)(300 - w / 2), 202, ":", 3, UI_COL_SUB);
+    w = ui_clock_width(":", 72);
+    ui_add_clock((int16_t)(300 - w / 2), 202, ":", 72, UI_COL_SUB);
 
     /* 秒列 */
     btn(cs_s_up, "+", 2);
     two_digit(ss_str, cd_sec);
-    w = ui_text_width(ss_str, 3);
-    ui_add_text((int16_t)(360 - w / 2), 202, ss_str, 3, C_TITLE);
+    w = ui_clock_width(ss_str, 72);
+    ui_add_clock((int16_t)(360 - w / 2), 202, ss_str, 72, C_TITLE);
     btn(cs_s_dn, "-", 2);
 
     btn(exit_btn, "EXIT", 2);
