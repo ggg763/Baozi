@@ -19,7 +19,7 @@ TD1601，TD1601 自己算二维码、画在全屏或第 5 张卡片上。** 手�
 ```
    ①  PC 侧 net_share.py
        读本机 netsh 的 SSID/口令
-              │  UDP 广播 :8266  {"t":"wifi","ssid":…,"pwd":…}
+              │  UDP 广播 :8767  {"t":"wifi","ssid":…,"pwd":…}
               ▼
    ②  ESP32
        WiFi.begin(ssid, pwd) 入网（失败则 SoftAP 开热点）
@@ -141,7 +141,7 @@ python net_share.py --ip 192.168.1.42  # 单播，不广播
 python net_share.py --no-pass        # 只给 SSID，口令让手机填
 ```
 
-包格式（UDP，默认 `255.255.255.255:8266`）：
+包格式（UDP，默认 `255.255.255.255:8767`）：
 
 ```json
 {"v":1,"t":"wifi","ssid":"MyHome","pwd":"******","token":"baozi","bssid":"aa:bb:..."}
@@ -149,6 +149,11 @@ python net_share.py --no-pass        # 只给 SSID，口令让手机填
 
 ESP32 愿意接就回 `{"v":1,"t":"ack","state":"joining"}`（脚本会打印出来）。
 口令是**明文广播**，只在家用/赛场自有网络用；不想发就用 `--no-pass`。
+
+端口与既有方案的关系：PC↔ESP32 那条链路已经占了 **TCP 8765**（PC 服务）和
+**UDP 8766**（ESP32 广播找 PC）。配网这包用 **8767**，紧挨着但不冲突。
+另外，ESP32 现在的 WiFi 凭证是 `config.h` 里编译期写死的 `WIFI_SSID_LIST`；
+接了 `net_share.py` 之后可以把它降级成"兜底"——运行时收到包就用包里的。
 
 ### `tools/push_qr.py`（台架联调）
 
