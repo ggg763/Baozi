@@ -9,7 +9,7 @@
 为什么要 PC 掺和：TD1601 没有射频，ESP32 又不知道"家里的网叫什么"。
 PC 本来就连在那个网上，由它把凭证递过去最省事 —— 用户不用在屏幕上戳键盘。
 
-协议（UDP，默认广播 255.255.255.255:8266，JSON）：
+协议（UDP，默认广播 255.255.255.255:8767，JSON）：
     请求  {"v":1,"t":"wifi","ssid":"MyHome","pwd":"******","token":"baozi"}
     可选  "bssid"（有就用，能少一次扫描）
     应答  {"v":1,"t":"ack","state":"joining"}        ← ESP32 愿意接就回一条
@@ -34,7 +34,7 @@ import subprocess
 import sys
 import time
 
-DEFAULT_PORT = 8266
+DEFAULT_PORT = 8767
 DEFAULT_TOKEN = "baozi"
 PROTO_VERSION = 1
 
