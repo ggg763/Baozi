@@ -437,7 +437,7 @@ static const uint8_t k_clk_seg[10] = {
 };
 
 /* 比例（相对数字高度 h）：笔画厚度 / 数字宽 / 字距 / 冒号宽 / '1' 的格子宽 */
-#define CLK_THICK(h)   ((h) * 20 / 100)
+#define CLK_THICK(h)   ((h) * 15 / 100)
 #define CLK_DIGIT_W(h) ((h) * 52 / 100)
 #define CLK_GAP(h)     ((h) * 11 / 100)
 #define CLK_COLON_W(h) ((h) * 24 / 100)
