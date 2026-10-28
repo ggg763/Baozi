@@ -52,6 +52,29 @@ if not exist "%SKETCH%\esp32_baozi.ino" (
   exit /b 1
 )
 
+REM ---- build cache self-heal ----
+REM  arduino-cli reuses the .o files in %OUTDIR%. When the source file SET changes
+REM  (a .h appears/disappears, e.g. the first time wifi_secrets.h shows up) the old
+REM  cache can corrupt the compile command line:
+REM      fatal error: cannot specify '-o' with '-c', '-S' or '-E' with multiple files
+REM  That is not a code problem - wiping the cache fixes it. We fingerprint the file
+REM  list: unchanged -> incremental build (fast); changed -> wipe once.
+if /i "%~1"=="clean" (
+  echo [i] clean: wiping build cache
+  rmdir /s /q "%OUTDIR%" 2>nul
+)
+
+set "LISTOLD=%TEMP%\baozi_srclist.old"
+set "LISTNEW=%TEMP%\baozi_srclist.new"
+(dir /b "%SKETCH%\*.h" "%SKETCH%\*.cpp" "%SKETCH%\*.ino" 2>nul) > "%LISTNEW%"
+if not exist "%LISTOLD%" goto :cache_ready
+fc /b "%LISTOLD%" "%LISTNEW%" >nul 2>&1
+if not errorlevel 1 goto :cache_ready
+echo [i] source list changed - wiping build cache
+rmdir /s /q "%OUTDIR%" 2>nul
+:cache_ready
+copy /y "%LISTNEW%" "%LISTOLD%" >nul
+
 echo [1/2] compiling ...
 "%CLI%" compile --fqbn "%FQBN%" --additional-urls https://arduino.me/packages/esp32.json --output-dir "%OUTDIR%" "%SKETCH%"
 if errorlevel 1 (

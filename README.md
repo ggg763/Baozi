@@ -239,6 +239,7 @@ arduino-cli compile \
 | 脚本 | 作用 |
 |---|---|
 | `02_ESP32/build.bat` | 双击即编译，FQBN 写死，产物自动拷进 `firmware/` |
+| `02_ESP32/build.bat clean` | 同上，但强制清空构建缓存（报 stale object 类怪错时用） |
 | `02_ESP32/flash.bat COM14` | 调 core 自带 esptool 烧三件套；不带参数会列串口 |
 
 两个脚本都实跑验证过（编译 0 error / 0 warning；烧录 `Hash of data verified`）。

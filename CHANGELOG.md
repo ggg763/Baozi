@@ -7,6 +7,28 @@
 
 ---
 
+## 2026-10-28 · build.bat 构建缓存自愈
+
+拆分 `wifi_secrets.h` 时踩到一个坑：临时把该文件移走再放回，下一次编译直接报
+
+```
+xtensa-esp-elf-g++.exe: fatal error: cannot specify '-o' with '-c', '-S' or '-E' with multiple files
+```
+
+**不是代码问题**，是 `%TEMP%\baozi_build` 里残留的 `.o` 让编译命令行错乱
+（源文件集合变了，缓存没失效）。清掉缓存即恢复：`build.bat clean`。
+
+现在 `build.bat` 会记一份源文件清单指纹（`*.h *.cpp *.ino` 的文件名列表）：
+
+- 清单不变 → 保留缓存，增量编译（约 1 分半）
+- 清单变了 → 自动清空缓存再编（避免再撞这个假错误）
+- `build.bat clean` → 强制清空
+
+顺带把脚本里的注释改回纯 ASCII：cmd 按系统代码页解析 `.bat`，
+UTF-8 中文注释里的括号/破折号会被拆成命令行，直接让脚本执行错乱（实测如此）。
+
+---
+
 ## 2026-10-28 · 敏感信息移出仓库
 
 仓库是公开的，而固件/配置里散落着明文 WiFi 密码、局域网 IP、真实 AppID，
