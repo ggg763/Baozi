@@ -328,13 +328,27 @@ class TcpTransport:
         self.log(f"[link] 监听 {self.host}:{self.port}，等待 ESP32 连接 ...")
 
     def close(self) -> None:
-        for s in (self._conn, self._sock):
+        """只断开当前客户端，**保留监听端口**。
+
+        2026-10-28 修：原来这里把监听 socket 也一起关了，于是 ESP32 只要重启
+        一次（升级固件、按复位键、WiFi 掉线 15 秒），PC 就再也接不进来——
+        必须重启整个 PC 程序，现场极难看出原因。监听口只在 shutdown() 里关。
+        """
+        if self._conn:
             try:
-                if s:
-                    s.close()
+                self._conn.close()
             except Exception:  # noqa: BLE001
                 pass
         self._conn = None
+
+    def shutdown(self) -> None:
+        """彻底关闭（程序退出用）：断客户端 + 关监听。"""
+        self.close()
+        if self._sock:
+            try:
+                self._sock.close()
+            except Exception:  # noqa: BLE001
+                pass
         self._sock = None
 
     @property
@@ -360,6 +374,13 @@ class TcpTransport:
 
         conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         conn.settimeout(0.5)
+        # 板子重启后往往在 PC 判超时之前就重新连上来（15 秒窗口内）。
+        # 这时旧连接还挂着，必须先关掉，否则 fd 泄漏、且读线程可能继续读旧 socket。
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except Exception:  # noqa: BLE001
+                pass
         self._conn = conn
         # ⚠️ 重新计时：_last_rx 是"距上次收到数据多久"，上一轮连接留下的旧值
         #    会让新连接一上来就被判成"15 秒读超时"并立刻断开（实测踩过的坑）。

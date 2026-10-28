@@ -136,7 +136,9 @@ class VoiceServer:
         except Exception:  # noqa: BLE001
             pass
         self._transport.wait_tx_idle(1.0)   # 让 PLAY_END 之类写完再走
-        self._transport.close()
+        # 退出时用 shutdown()（TCP 才会真正关监听口）；串口没有这个方法，回落 close()
+        shutdown = getattr(self._transport, "shutdown", None)
+        (shutdown or self._transport.close)()
 
     @property
     def connected(self) -> bool:
@@ -183,8 +185,17 @@ class VoiceServer:
     def _read_loop(self) -> None:
         dec = FrameDecoder()
         reported_bad = False
+        was_open = False
 
         while not self._stop.is_set():
+            # 连接断过（板子重启/WiFi 抖动）就换一个干净的解码器：
+            # 上一轮可能停在半帧上，残留字节会让重连后的前 100 多字节全部对不齐
+            # （实测重连后报"收到 117 个无法对齐的字节"就是这么来的）。
+            if was_open and not self._transport.is_open:
+                dec = FrameDecoder()
+                reported_bad = False
+            was_open = self._transport.is_open
+
             data = self._transport.read(4096)
             if not data:
                 if isinstance(self._transport, TcpTransport):

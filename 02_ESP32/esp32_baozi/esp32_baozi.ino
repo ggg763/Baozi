@@ -234,7 +234,7 @@ static bool     s_hello_pending  = true;   // 还没得到 PC 的应答
 static uint32_t s_hello_last_ms  = 0;      // 上次发 HELLO 的时刻（限频用）
 
 static const char* kHelloText =
-    "esp32s3cam/baozi-voice/16k-mono [+cam] fw/2026-11-05a";
+    "esp32s3cam/baozi-voice/16k-mono [+cam] fw/2026-10-28b";
 
 void sendHelloOnce() {
   s_hello_last_ms = millis();
@@ -492,6 +492,14 @@ bool cameraInit() {
 
 // =====================================================================
 void setup() {
+  // ★ WiFi 模式下先把 UART0（CH340）拉起来：log.cpp 会把日志同时镜像到
+  //   这里，否则"板子连不上"时两眼一摸黑（Serial 在 CDCOnBoot=cdc 时是原生
+  //   USB CDC，只接 CH340 的板子上收不到任何字）。
+  //   USB 模式不动它：那条链路 Serial 就是 PC 的协议口。
+#if !USE_USB_LINK
+  Serial0.begin(115200);
+#endif
+
   // ★ 顺序很重要：先把串口（USB CDC）起来并挂上帧回调，
   //   否则后面所有 logXxx() 都发不出去（PC 也就看不到启动日志）。
   linkSetHandler(onFrame);
@@ -503,7 +511,7 @@ void setup() {
   // ★ 版本号：排查时第一眼看这个，能立刻确认板子上跑的是不是最新固件。
   //   改过通信 / 抓图 / 握手逻辑就要动它，否则"到底烧没烧进去"说不清。
   //   例：问"你看到了什么"没反应时，先看这行是不是当前版本。
-  logLine("  固件: 2026-11-06  双模链路 + 组员 app 特性（多热点/手机控制台）");
+  logLine("  固件: 2026-10-28b  热点切换 + core3.2 兼容 + 修复 discoveryLoop 未调用 + 日志镜像 UART0");
 #if USE_USB_LINK
   logLine("  链路: USB 串口（PC 只管外网，不需要 WiFi/IP）");
   logLine("  耳朵: MAX9814 -> ADC -> USB -> PC");
@@ -568,6 +576,17 @@ void setup() {
 
 // =====================================================================
 void loop() {
+#if !USE_USB_LINK
+  // ★ WiFi 模式必须先轮询 UDP 发现，再让 linkLoop() 去连 PC。
+  //   历史 bug（2026-10-28 定位）：这里从来没有调用过 discoveryLoop()，
+  //   只有 setup() 里的 discoveryBegin() 绑了 8766 端口 —— 端口开着却没人
+  //   parsePacket()，于是 PC 广播永远收不到，日志永久停在
+  //   "[net] 还没收到 PC 广播（当前占用兜底地址 0.0.0.0）"。
+  //   现象就是：WiFi 连上了、板子 ping 得通、HTTP 页面也能开，但就是不上线。
+  //   顺序不能反：discovery 填好地址，linkLoop 才连得对。
+  discoveryLoop();
+#endif
+
   // ---- 链路收发（USB：读串口切帧；WiFi：重连 + 收帧）----
   linkLoop();
 

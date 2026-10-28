@@ -29,7 +29,15 @@ static void logEmit(const char* text, size_t len) {
     len -= n;
   }
 #else
+  // WiFi 模式：串口是空闲的，直接写。
+  // ★ 同时镜像到 UART0（Serial0 = GPIO43/44，板载 CH340 那一路）。
+  //   原因：CDCOnBoot=cdc 时 Serial 落在原生 USB CDC 口上，
+  //   而多数 S3 开发板只把 CH340 引出来（或调试时只接了那一根线）。
+  //   不镜像的话，WiFi 模式下一个字都看不到——连不上时完全无法定位。
+  //   代价只是几十字节/秒的串口带宽，UART0 在本工程没有别的用途
+  //   （TD1601 走 UART2，PC 在 WiFi 模式下走 TCP）。
   Serial.write((const uint8_t*)text, len);
+  Serial0.write((const uint8_t*)text, len);
 #endif
 }
 

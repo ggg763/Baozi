@@ -7,6 +7,90 @@
 
 ---
 
+## 2026-10-28 · 实机联调：修掉「板子上不了线」的真凶
+
+上一轮编译通过后烧进真板子，暴露出 WiFi 模式从未被真正跑过。
+
+**硬件**：ESP32-S3（QFN56 rev0.2，16 MB Flash + 8 MB 内嵌 OPI PSRAM），
+板载 CH340 → `COM14`，MAC `28:84:85:4A:31:20`。
+
+### 1. 致命 bug：`discoveryLoop()` 从来没有被调用 ★
+
+**现象**：板子连上了热点（`IP=192.168.193.204, RSSI=-41 dBm`），PC 能 ping 通它、
+`http://192.168.193.204/` 能打开，但 PC 端永远等不到连接；板子串口每 5 秒刷
+`[net] 还没收到 PC 广播（当前占用兜底地址 0.0.0.0）`。
+
+**根因**：`setup()` 里调了 `discoveryBegin()`（绑定 8766）就再没人调
+`discoveryLoop()` —— 端口开着却没人 `parsePacket()`，PC 信标全烂在 socket 缓冲区里。
+全工程 grep 只有注释提到 `discoveryLoop`，没有一处调用。
+
+**修法**：`loop()` 开头补上，且必须排在 `linkLoop()` 之前（先拿到地址才能连）：
+
+```cpp
+#if !USE_USB_LINK
+  discoveryLoop();   // WiFi 模式：先发现 PC，再连它
+#endif
+  linkLoop();
+```
+
+**验证**（实机，本机 PC + vivo S30 Pro mini 热点）：
+
+```
+[disc] >>> 已发现 PC: 192.168.193.232（UDP 发现成功）
+[net] 已连接 PC 服务器
+```
+
+PC 侧同时看到：
+
+```
+[link] ESP32 已连接: 192.168.193.204:62288
+[link] 设备上线: esp32s3cam/baozi-voice/16k-mono [+cam] fw/2026-10-28b
+[state] LISTENING
+[pipe] 检测到语音开始
+```
+
+即：发现 → TCP → HELLO → 麦克风音频 → VAD 全部打通。
+
+### 2. WiFi 模式下一个字都看不到
+
+`logEmit()` 在 WiFi 模式走 `Serial.write()`，而 `CDCOnBoot=cdc` 时 `Serial`
+是**原生 USB CDC**；板子只引了 CH340（UART0），所以日志全丢。这次能定位到
+bug 1，靠的就是先把它修好。
+
+改法：`log.cpp` 在 WiFi 模式下同时写 `Serial0`（GPIO43/44，CH340 那一路），
+`setup()` 里先 `Serial0.begin(115200)`。UART0 在本工程没有别的用途（TD1601 走
+UART2，PC 在 WiFi 模式下走 TCP）。USB 模式完全不受影响。
+
+### 3. 顺手把 HELLO 里的固件标记对齐
+
+`kHelloText` 里是 `fw/2026-11-05a`（一个未来日期），改为 `fw/2026-10-28b`，
+PC 侧日志里能直接看出板子跑的是哪一版。启动横幅同步更新。
+
+### 4. PC 端加了「广播被过滤」的兜底（未启用，留在代码里）
+
+排查过程中一度怀疑手机热点过滤广播，于是给 `discovery.py` 加了兜底：
+12 秒还没收到板子信标，就扫本网段 80 端口、用首页标题 `包子控制台` 认板子
+（实测 254 个地址 1.5 s），拿到 IP 后改用**单播**信标。
+
+**后来证实这条路不用走**：热点广播是通的，之前的"收不到"全是 bug 1 造成的。
+兜底逻辑保留但默认惰性（正常网络 2 秒内就发现，永远不触发扫描），
+留给现场可能遇到的其他热点。
+
+### 5. 新增两个脚本：`02_ESP32/build.bat`、`02_ESP32/flash.bat`
+
+因为板级参数只存在 Arduino IDE 的界面状态里，换台机器/手滑选错板子就会
+报 `esp_camera.h: No such file or directory`（只有 esp32/s2/s3 目标带摄像头组件）。
+
+- `build.bat`：把 FQBN 写死（`esp32s3 / 16M / OPI PSRAM / 3MB APP / USB CDC`），
+  直接调 Arduino IDE 自带的 arduino-cli，产物自动拷进 `firmware/`
+- `flash.bat COMx`：调 core 自带的 esptool 烧三件套；不带参数则列串口
+
+两个脚本都已实跑验证（编译 0 error / 0 warning；烧录 Hash verified）。
+
+**最终固件**：1,058,082 B = 33% of 3 MB APP；全局变量 104,600 B = 31%。
+
+---
+
 ## 2026-10-28 · 换热点 + ESP32 首次真正编译通过
 
 ### 1. 热点从 cowork 手机切到本人手机

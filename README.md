@@ -204,6 +204,20 @@ arduino-cli compile \
   02_ESP32/esp32_baozi
 ```
 
+#### 别用 IDE 的默认板子——用这两个脚本
+
+板级参数只存在 Arduino IDE 的界面状态里。**选错板子（默认是 Arduino Uno，
+或 C3/C6 这类目标）会在 `#include esp_camera.h` 处直接报
+`No such file or directory`** —— 只有 esp32 / esp32s2 / esp32s3 三个目标带摄像头组件。
+
+| 脚本 | 作用 |
+|---|---|
+| `02_ESP32/build.bat` | 双击即编译，FQBN 写死，产物自动拷进 `firmware/` |
+| `02_ESP32/flash.bat COM14` | 调 core 自带 esptool 烧三件套；不带参数会列串口 |
+
+两个脚本都实跑验证过（编译 0 error / 0 warning；烧录 `Hash of data verified`）。
+用 IDE 的话，务必手动确认上表五项设置。
+
 #### 换热点（当前网络见下表）
 
 热点写死在 `02_ESP32/esp32_baozi/config.h` 的 `WIFI_SSID_LIST` / `WIFI_PASSWORD_LIST`，
@@ -298,13 +312,27 @@ run.bat                       # 语音 + 视觉 + 情感 + 卡片，全部拉起
 | PC 目标检测 | YOLOv8n 25 ms/帧（GPU 与 CPU 持平，小模型传输开销抵消） |
 | PC 语音识别 | SenseVoiceSmall 本地缓存离线加载，`cuda:0`，0.6 s 推理 |
 | TD1601 编译 | 通过，`text 96132 / data 644 / bss 48656` |
-| ESP32 编译 | 通过（core 3.2.1-cn），1,057,502 B / 33% APP，0 警告 |
+| ESP32 编译 | 通过（core 3.2.1-cn），1,058,082 B / 33% APP，0 警告 |
+| **ESP32 实机联网** | 通过：`WiFi 已连接 "vivo S30 Pro mini", IP=192.168.193.204, RSSI=-29 dBm` |
+| **PC ↔ ESP32 实机联调** | 通过（mock ASR/echo LLM/tone TTS）：发现 → TCP → HELLO → 麦克风音频 → VAD → 7 轮回放 |
+| **板子重启自动重连** | 通过：PC 不再需要重启，`ESP32 已连接` 可重复出现 |
 | 三端协议一致性 | 逐条比对通过（见 `04_DOCS/01_通信协议.md`） |
 
 ### 未验证（缺硬件）
 
-- 三端联调（麦克风/喇叭/舵机/屏幕均未上电实测）
-- 新固件（含 `vivo S30 Pro mini` 凭据）尚未实机联网验证
+- 真实 ASR/LLM/TTS 端到端（本次用 mock 后端跑通链路，模型侧此前已单独验证）
+- TD1601 屏幕/舵机联动（固件编译通过，未上电联调）
+
+### 实机联调中修掉的三个断点
+
+1. **`discoveryLoop()` 从未被调用**：`setup()` 只调了 `discoveryBegin()`（绑端口），
+   没人 `parsePacket()`，于是 PC 广播永远收不到。现象是板子 WiFi 正常、ping 得通、
+   网页能开，就是不上线。已在 `loop()` 开头补上，且排在 `linkLoop()` 之前。
+2. **WiFi 模式没有任何日志输出**：`Serial` 在 `CDCOnBoot=cdc` 时是原生 USB CDC，
+   板子只引了 CH340（UART0）。现在日志同时镜像到 `Serial0`。
+3. **TCP 断开后 PC 不再监听**：`TcpTransport.close()` 把监听 socket 一起关了，
+   板子一重启就必须重启 PC 程序。现在 `close()` 只断客户端，`shutdown()` 才关端口；
+   重连时还会重置帧解码器，避免残留半帧。
 
 ### 已知问题
 
