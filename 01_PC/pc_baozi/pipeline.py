@@ -446,11 +446,23 @@ class Pipeline:
         except Exception as exc:  # noqa: BLE001
             self._log(f"联网检索出错（忽略）：{exc!r}")
 
+        # ---- 报时 / 报日期（按需）：钟点是确定性事实，让代码给，不让模型猜 ----
+        # 提示词状态行里也写了时间，但 7B 常常视而不见（问"几点了"回"大概下午"）；
+        # "还有多久到六点"这种要算的，模型更是不知道现在几点。这里纯本地，零耗时。
+        time_context = ""
+        try:
+            from clock import time_hint
+            time_context = time_hint(text)
+            if time_context:
+                self._log(f"报时: {time_context}")
+        except Exception as exc:  # noqa: BLE001
+            self._log(f"报时出错（忽略）：{exc!r}")
+
         # ---- LLM（文本 + 情绪 + 意图；有画面就把画面一起给它）----------
         t1 = time.perf_counter()
         try:
             reply, emotion, intent, intensity = self.llm.chat_ex(
-                text, vision_context, calc_context, web_context)
+                text, vision_context, calc_context, web_context, time_context)
             reply = reply.strip()
         except Exception as exc:
             # 大模型出错必须让人看见，否则表现就是"说了话但喇叭一直不出声"
@@ -464,6 +476,12 @@ class Pipeline:
             return
 
         self._log(f"回复({t_llm:.2f}s): {reply}  [情绪={emotion} 意图={intent} 强度={intensity}]")
+        # 提示词里写了「reply 不超过 50 字」，但 7B 模型不一定听话。
+        # 超了就记一笔 —— 这是判断"要不要在代码里硬截断"的唯一依据，
+        # 顺便也能看出合成预算是不是被拉长了。
+        if len(reply) > 60:
+            self._log(f"⚠️ 回复 {len(reply)} 字，超过 50 字上限"
+                      f"（本句合成预算 {4 + 0.02 * len(reply):.1f}s）")
         if self.ev.on_reply:
             self.ev.on_reply(reply)
         # 情绪/意图/强度：交给上层下发 TD1601（行为层）+ 写回 PC 情绪内存
@@ -481,15 +499,25 @@ class Pipeline:
             speech = self.tts.synthesize(reply)
         except Exception as exc:
             self._log(f"!!! 语音合成失败: {exc}")
-            self.set_state(State.IDLE)
-            return
+            fb = self._fallback_speech()
+            if fb is not None:
+                self._log("合成失败，改播本机预生成的兜底话术")
+                speech = fb
+            else:
+                self.set_state(State.IDLE)
+                return
         t_tts = time.perf_counter() - t2
         self._log(f"[diag] TTS 返回：{speech.size} 采样点，耗时 {t_tts:.2f}s")
 
         if speech.size == 0:
-            self._log("TTS 没有产出音频")
-            self.set_state(State.IDLE)
-            return
+            fb = self._fallback_speech()
+            if fb is not None:
+                self._log("TTS 没有产出音频，改播本机预生成的兜底话术")
+                speech = fb
+            else:
+                self._log("TTS 没有产出音频，且无兜底话术")
+                self.set_state(State.IDLE)
+                return
 
         self._save_audio(speech, "tts")
         self._log(
@@ -721,6 +749,23 @@ class Pipeline:
             return text
 
     # ------------------------------------------------------------------
+    def _fallback_speech(self) -> "np.ndarray | None":
+        """合成失败时，从 TTS 后端取一段本机预生成的兜底话术（assets/fallback/*.wav）。
+
+        返回 None 表示没有兜底可用（TTS 不是 CachedFallbackTts，或它也没备成）。
+        """
+        getter = getattr(self.tts, "fallback_pcm", None)
+        if not callable(getter):
+            return None
+        try:
+            pcm = getter()
+        except Exception as exc:  # noqa: BLE001
+            self._log(f"取兜底话术失败：{exc!r}")
+            return None
+        if pcm is None or pcm.size == 0:
+            return None
+        return pcm
+
     def _speak_reply(self, reply: str, emotion: str, intent: str,
                      intensity: str) -> None:
         """把一句话走完"上报 + 下发情绪 + TTS + 等插话"的收尾流程。
@@ -741,12 +786,22 @@ class Pipeline:
             speech = self.tts.synthesize(reply)
         except Exception as exc:
             self._log(f"!!! 语音合成失败: {exc}")
-            self.set_state(State.IDLE)
-            return
+            fb = self._fallback_speech()
+            if fb is not None:
+                self._log("合成失败，改播本机预生成的兜底话术")
+                speech = fb
+            else:
+                self.set_state(State.IDLE)
+                return
         if speech.size == 0:
-            self._log("TTS 没有产出音频")
-            self.set_state(State.IDLE)
-            return
+            fb = self._fallback_speech()
+            if fb is not None:
+                self._log("TTS 没有产出音频，改播本机预生成的兜底话术")
+                speech = fb
+            else:
+                self._log("TTS 没有产出音频，且无兜底话术")
+                self.set_state(State.IDLE)
+                return
 
         self._save_audio(speech, "tts")
         self._log(f"合成({time.perf_counter() - t2:.2f}s): "
@@ -806,10 +861,39 @@ class Pipeline:
             speech = self.tts.synthesize(text)
         except Exception as exc:  # noqa: BLE001 —— 合成失败不该影响主链路
             self._log(f"提醒合成失败: {exc!r}")
-            return False
+            fb = self._fallback_speech()
+            if fb is None:
+                return False
+            self._log("提醒合成失败，改播本机预生成的兜底话术")
+            speech = fb
         if speech is None or not len(speech):
-            return False
+            fb = self._fallback_speech()
+            if fb is None:
+                return False
+            self._log("提醒 TTS 没有产出音频，改播本机预生成的兜底话术")
+            speech = fb
         self._start_playback(speech)
+        return True
+
+    def say_pcm(self, pcm: np.ndarray, label: str = "固定音频") -> bool:
+        """直接播一段**已经准备好**的 PCM，不经过 TTS。
+
+        用途：开机自我介绍（assets/boot_hello.wav）。它必须和 TTS / 网络
+        完全解耦 —— 开机时网络可能还没起来，但"我上线了"这句话无论如何
+        都得说出来，顺便当整条音频链路（PC -> ESP32 -> 喇叭）的自检。
+
+        返回 False 的两种情况与 say() 一致：正在对话中，或没人负责推流。
+        """
+        if pcm is None or not len(pcm):
+            return False
+        if self.state in (State.THINKING, State.WAITING, State.SPEAKING):
+            self._log(f"{label}播报跳过（当前状态 {self.state.name}）")
+            return False
+        if self.ev.on_play_pcm is None:
+            self._log(f"{label}没有播放通路，跳过")
+            return False
+        self._save_audio(pcm, "boot")
+        self._start_playback(pcm)
         return True
 
     def notify_play_done(self) -> None:

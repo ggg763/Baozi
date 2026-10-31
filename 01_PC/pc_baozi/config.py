@@ -93,16 +93,21 @@ class Config:
     llm_backend: str = "openai"  # openai | echo | mock
     llm_base_url: str = "http://localhost:11434/v1"
     llm_api_key: str = "ollama"
-    # 默认走本地 Ollama 的纯文本模型。不要用带思维链的模型（如 qwen3 系列）：
-    # 它们会把 token 全花在推理上、content 返回空，语音助手场景下不可用。
-    llm_model: str = "qwen2.5:7b"
+    # 默认走本地 Ollama 的纯文本模型。
+    # 注意：qwen3 系列默认是思维链模型，会把 token 全花在推理上、content 返回空，
+    # 语音助手场景下不可用 —— 必须同时开 llm_disable_think=true 关掉思考。
+    llm_model: str = "qwen3:8b"
     # 温度：越低输出越稳定、越可预测。交互体验优先 -> 0.3（原 0.7 偏随机）。
     llm_temperature: float = 0.3
-    # 回复要念出来，两三句话足够；上限调小能明显减少生成时间（512 → 200）。
-    llm_max_tokens: int = 320
+    # 回复要念出来，两三句话足够；但思维链模型需要留出推理 token 的余量，
+    # 所以不能太小（320 -> 1024）。关掉思考后实际只生成几十到上百 token。
+    llm_max_tokens: int = 1024
     llm_timeout_s: float = 120.0
-    # 上下文窗口。语音助手不需要长上下文，调小可省显存、加快首 token。
-    llm_num_ctx: int = 2048
+    # 上下文窗口。8B 模型需要更大的窗口才能发挥（2048 -> 4096）。
+    llm_num_ctx: int = 4096
+    # 是否关闭思维链（Qwen3 这类模型用）。true 时请求里带 reasoning_effort=none，
+    # 让它跳过推理、直接输出正文。对非思维链模型（qwen2.5）无副作用。
+    llm_disable_think: bool = True
     # 启动时先"预热"一次（把模型加载进显存并常驻），避免第一句话等 10 秒以上。
     llm_warmup: bool = True
     # 固定人设提示词：留空则从 pc_baozi/prompts/system_prompt.txt 加载
@@ -117,6 +122,30 @@ class Config:
     tts_voice: str = "zh-CN-XiaoxiaoNeural"
     tts_rate: str = "+0%"  # 语速，例如 +10% / -10%
     tts_volume: str = "+0%"
+    # 单句合成的预算（秒）。0 = 按字数自动算（4 + 0.02×字数，50 字约 5s）。
+    # ⚠️ 别再写死成 6：实测合成耗时 ≈ 1.0 + 0.019×字数，300 字要 5.2s、
+    #    450 字要 13.9s，固定 6s 会把长句**必然**判成失败（整句被兜底话术顶掉）。
+    tts_timeout_s: float = 0.0
+    # 同一句的重试次数。快失败立刻重试；卡死（吃满预算）就直接换线路，
+    # 不把时间浪费在同一条不通的路上。
+    tts_retry: int = 2
+    # 代理。**默认留空 = 只走直连**。
+    # ⚠️ 实测 edge-tts 国内直连是通的（19/20 成功，那次失败是本地超时掐的），
+    #    之前以为要挂 Clash 是误判 —— 挂 Clash 是为了 GitHub，跟语音无关，
+    #    把语音塞进代理只会多一条会挂的链路。
+    #    真要强制走代理才填，例如 "http://127.0.0.1:7897"。
+    tts_proxy: str = ""
+    # 备用线路：留空就没有备用（推荐）。填了才会在主线路失败时切过去，
+    # 并在连续失败后由后台线程探测恢复。
+    tts_alt_proxy: str = ""
+    # 开机自我介绍语音：预生成 WAV（assets/boot_hello.wav），
+    # 纯本地读盘，和 TTS / 网络完全解耦。见 boot_voice.py。
+    boot_voice_enabled: bool = True
+    # 连上 ESP32 后，把本机 WiFi 的配网二维码推到 TD1601 屏幕（NET 页）一次。
+    # 屏幕收不到 `QR:` 时会一直显示 "waiting for network / from ESP32 over UART3"，
+    # 所以这件事必须有人做 —— 现在由 PC 启动时顺手推（见 main.py 的
+    # _start_provision_qr）。想安静开机就加 --no-qr。
+    provision_qr_enabled: bool = True
 
     # ---------------- 播放节奏 ----------------
     # ESP32 播放缓冲 1.5 秒。推流时尽量把 ESP32 端缓冲维持在

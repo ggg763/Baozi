@@ -41,9 +41,11 @@ BACKEND_DIR = os.path.join(APP_DIR, "backend")
 
 class AppService:
     def __init__(self, cfg, speaker: Optional[Callable[[str], bool]] = None,
-                 log: Callable[[str], None] = print) -> None:
+                 log: Callable[[str], None] = print,
+                 say_pcm: Optional[Callable[[object, str], bool]] = None) -> None:
         self.cfg = cfg
         self.speaker = speaker
+        self.say_pcm = say_pcm        # 演示播报专用：直接推一段现成 PCM（不经过 TTS）
         self.log = log
         self._backend: Optional[subprocess.Popen] = None
         self._backend_thread: Optional[threading.Thread] = None
@@ -183,6 +185,22 @@ class AppService:
             return
 
         link.set_speaker(self.speaker)
+
+        # 一键演示的播报出口：板子打 `DEMO:<NAME>` 上来 ->
+        # 放本地预合成的 WAV -> 回一行 DEMORUN 让它开演。
+        # 没有 say_pcm（比如单独跑 app/link.py）就不接，板子按自己的兜底窗口往下演。
+        if self.say_pcm is not None:
+            try:
+                from demo_bridge import DemoAnnouncer
+
+                link.set_demo(DemoAnnouncer(
+                    say_pcm=self.say_pcm,
+                    send_line=link.write_line,
+                    log=self.log,
+                ))
+                self.log("[app] 演示播报已接入（点屏幕 DEMO 页的 START 开演）")
+            except Exception as exc:        # noqa: BLE001
+                self.log(f"[app] 演示播报未接入（{exc}）：演示会照跑，只是没有解说")
 
         args = SimpleNamespace(
             port=(getattr(self.cfg, "app_board_port", "") or None),

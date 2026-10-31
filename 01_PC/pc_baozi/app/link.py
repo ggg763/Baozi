@@ -71,6 +71,17 @@ DEFAULT_API = "http://127.0.0.1:8000"
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 
+# 演示播报（pc_baozi/demo_bridge.py）在上一层目录：它能 import 就接上播报，
+# 不能（比如单独 python app/link.py 跑）就安静降级 —— 板子那边的 2.5 秒兜底
+# 窗口会让演示照常往下演，只是没有解说。
+_PARENT = os.path.dirname(HERE)
+if _PARENT not in sys.path:
+    sys.path.insert(0, _PARENT)
+try:
+    import demo_bridge
+except Exception:                           # noqa: BLE001
+    demo_bridge = None
+
 try:                                    # 包导入（pc_baozi 主程序走这条）
     from . import board as bt
     from . import phrases as rp
@@ -319,6 +330,43 @@ def set_speaker(fn):
     """
     global _speaker
     _speaker = fn
+
+
+# ---------------------------------------------------------------------------
+# 一键演示的播报出口（由 AppService 注入 DemoAnnouncer）
+#
+# 板子按演示步骤打 `DEMO:<NAME>:<IDX>` 上来，这里转给 announcer：
+# 它放一段本地预合成的 WAV，放完往下发一行 DEMORUN 让板子开演。
+# 没注入就不处理（板子那边的 2.5 秒兜底窗口会自己往下走，只是没有解说）。
+# ---------------------------------------------------------------------------
+_demo = None
+
+# 当前打开的串口对象（write_line 用它；重连后 run() 会重新赋值）
+_SER = [None]
+
+
+def set_demo(announcer):
+    global _demo
+    _demo = announcer
+
+
+def write_line(text):
+    """往屏幕串口发一行纯文本（下行命令），如 "DEMORUN"。
+
+    为什么单独一个函数：板子的 UART0 是"协议帧 + printf + 文本命令"三线共线，
+    文本命令走的是 uart_hal 的行解析，不需要组帧/校验，直接写即可。
+    没开串口（--dry）就只打印。
+    """
+    if _SER[0] is None:
+        print("        [↓ 文本] %s（未开串口，仅打印）" % text)
+        return False
+    try:
+        _SER[0].write((text + "\r\n").encode("ascii"))
+        _SER[0].flush()
+        return True
+    except Exception as e:                  # noqa: BLE001
+        print("[!] 下行文本发送失败：%s" % e)
+        return False
 
 
 def _load_seen():
@@ -892,6 +940,30 @@ def _state_name(s):
 # ---------------------------------------------------------------------------
 # 上行处理
 # ---------------------------------------------------------------------------
+def take_demo_requests(ctx, text):
+    """从板子的日志文本里切出完整的 `DEMO:<NAME>:<IDX>` 行。
+
+    返回 [(name, idx), ...]；没收到完整的行就返回空表。
+
+    ⚠️ 为什么要带 ctx["demo_tail"] 这种跨轮缓冲：
+        pump 每轮只读 256 字节，"DEMO:HAPPY:1\r\n" 完全可能被切成
+        "DEMO:HA" + "PPY:1\r\n" 两半 —— 按整行判断的话这一句就丢了，
+        表现是"演示到这一步突然没有解说"，而且极难查（日志里啥也没有）。
+        帧切分那边早就有同样的问题并且是这么解决的，这里照抄。
+    """
+    if not text or demo_bridge is None:
+        return []
+    s = (ctx.get("demo_tail") or "") + text
+    lines = s.split("\n")
+    ctx["demo_tail"] = lines[-1]        # 最后一段可能还没收全，留到下一轮
+    out = []
+    for raw in lines[:-1]:
+        got = demo_bridge.parse_demo_line(raw)
+        if got is not None:
+            out.append(got)
+    return out
+
+
 def handle_checkin(ctx, args, idx, ord_slot, action):
     """板子 0x90：[idx][slot][action] → 写回后端。返回是否成功。"""
     table = ctx.get("map") or []
@@ -991,6 +1063,17 @@ def pump(splitter, ser, ctx, args):
     frames, text = splitter.feed(chunk)
     if text:
         s = text.decode("ascii", "replace").replace("\r", "\n")
+
+        for name, idx in take_demo_requests(ctx, s):
+            print("[↑] 板子请求播报：%s%s" % (name, "（第 %d 步）" % (idx + 1) if idx >= 0 else ""))
+            if _demo is None:
+                # 没接播报器（单独跑本脚本 / 没起主链路）：板子会自己按 2.5s 兜底往下演
+                print("    [i] 未接入演示播报器，本次只演示不出声")
+                continue
+            try:
+                _demo.on_board_line(name, idx)
+            except Exception as e:          # noqa: BLE001
+                print("[!] 演示播报处理失败：%s" % e)
 
         # 【板子重启检测】板子的习惯/日程缓存都在内存里，一断电就空了。
         # 但它的 0x92/0x94「催数据」只在**用户去点那张空卡片**时才发，
@@ -1145,7 +1228,8 @@ def _port_is_ttl(p):
                                 "usb-serial", "usb serial"))
 
 
-def pick_port(explicit):
+def pick_port(explicit, quiet=False):
+    """选屏幕串口。quiet=True 时不打印排查长文（后台重试用，否则刷屏）。"""
     ports = list(list_ports.comports())
     if explicit:
         return explicit
@@ -1163,12 +1247,14 @@ def pick_port(explicit):
     # 以前这里直接 sys.exit(1) 让人手动 -p —— 现场双击 bat 就闪退，
     # 屏幕一片空白，看起来像"屏幕坏了"。现在改成逐个握手认人。
     if len(ttl) > 1:
-        print("[i] 发现 %d 个 USB-TTL 串口，逐个握手确认哪一个是屏幕……" % len(ttl))
+        if not quiet:
+            print("[i] 发现 %d 个 USB-TTL 串口，逐个握手确认哪一个是屏幕……" % len(ttl))
         hits = []
         for p in ttl:
             r = _port_handshake(p.device)
-            tag = {True: "← 是屏幕", False: "无回应", None: "打不开(可能被占用)"}[r]
-            print("    %-8s %-26s %s" % (p.device, p.description, tag))
+            if not quiet:
+                tag = {True: "← 是屏幕", False: "无回应", None: "打不开(可能被占用)"}[r]
+                print("    %-8s %-26s %s" % (p.device, p.description, tag))
             if r:
                 hits.append(p)
         if len(hits) == 1:
@@ -1177,6 +1263,9 @@ def pick_port(explicit):
         if len(hits) > 1:
             print("[!] %s 都回了屏幕的握手，无法唯一确定，请用 -p 指定"
                   % ", ".join(h.device for h in hits))
+
+    if quiet:
+        raise RuntimeError("暂未找到屏幕串口")
 
     print("选不出屏幕的串口。当前可用串口：")
     for p in ports:
@@ -1235,30 +1324,72 @@ def stop():
     STOP.set()
 
 
+REOPEN_SEC = 3.0          # 串口异常后每隔几秒重试一次（含"从没打开成功"的情况）
+
+
+def _open_serial(args, state):
+    """尝试打开屏幕串口。成功返回 (ser, port)，失败返回 (None, None)。
+
+    【为什么不抛异常了】
+        以前打不开串口就 raise RuntimeError，AppService 收到后打个
+        "屏幕桥接未启动"就把线程结束了 —— 于是现场最常见的一个软故障
+        （串口助手 / CDK 终端 / 第二个实例先占住了 COM 口）会变成
+        **永久故障**：用户关掉那个程序，屏幕也不会再收到任何数据，
+        必须重启 main.py。而板子的习惯/日程只存在内存里，
+        表现就是"屏幕一片空白、点了说收不到电脑的指令"。
+
+        串口打不开几乎全是"过一会儿自己就好"的软故障，所以这里一律
+        返回 None 交给主循环慢慢重试，让桥接线程一直活着。
+
+    state 只用来控制日志：首次失败打印完整排查提示，之后静默，
+    避免每 3 秒刷一屏。
+    """
+    first = not state.get("tried")
+    state["tried"] = True
+    try:
+        port = pick_port(args.port, quiet=not first)
+    except Exception as e:
+        if first:
+            print("[!] 现在找不到屏幕串口：%s" % e)
+        return None, None
+    try:
+        ser = serial.Serial(port, args.baud, timeout=0.05)
+    except Exception as e:
+        if first:
+            print("[!] 打开串口 %s 失败：%s" % (port, e))
+            print("    多半是被别的程序占着（串口助手 / CDK 终端 / 另一个 main.py）。")
+            print("    不用管它 —— 关掉那个程序后这里会自动连上并重推数据。")
+        return None, None
+    time.sleep(0.3)
+    try:
+        ser.reset_input_buffer()
+    except Exception:
+        pass
+    print("[i] 串口 %s 已打开 @%d（协议口与 printf 共线，日志会自动过滤）"
+          % (port, args.baud))
+    _SER[0] = ser                    # 演示播报的 DEMORUN 要用它下行
+    return ser, port
+
+
 def run(args):
     """常驻桥接主循环。
 
     args 需要这些字段（argparse 的 Namespace 或等价对象都行）：
         port / baud / api / interval / resync / dry / once / show_log
-    不再 sys.exit：串口打不开就抛 RuntimeError，交给调用方（AppService）决定怎么报告。
+
+    不再因为串口问题退出：找不到 / 打不开 / 中途掉线，都留在循环里重试。
     """
     ser = None
     port = None                        # --dry 模式下没有串口；重连逻辑会判断
+    open_state = {}                    # 只管"首次失败要不要打完整提示"
+    # 这两个标志是模块级的，上一次运行可能留在 True —— 开局先清掉，
+    # 否则新起来的桥接会被上一次的"串口已死"状态带偏
+    _WRITE_ERR[0] = False
+    _READ_ERR[0] = False
     if args.dry:
         print("[i] --dry：不开串口，只打印将要下发的帧")
     else:
-        port = pick_port(args.port)
-        try:
-            ser = serial.Serial(port, args.baud, timeout=0.05)
-        except Exception as e:
-            raise RuntimeError(
-                "打开串口 %s 失败：%s\n"
-                "提示：串口是不是被别的程序占着（串口助手 / CDK 终端 / 另一个实例）？"
-                % (port, e))
-        time.sleep(0.3)
-        ser.reset_input_buffer()
-        print("[i] 串口 %s 已打开 @%d（协议口与 printf 共线，日志会自动过滤）"
-              % (port, args.baud))
+        ser, port = _open_serial(args, open_state)
 
     ctx = {"map": [], "map_sched": [], "fingerprint": None, "sched_fingerprint": None,
            "online": None, "need_push": False, "need_sched_push": False,
@@ -1267,6 +1398,7 @@ def run(args):
            "remind_seen": _load_seen(), "last_remind_scan": 0.0,
            "settings": {}, "last_settings_pull": 0.0, "last_spoken_ts": 0.0,
            "boot_at": 0.0, "boot_ready": True, "last_reopen": 0.0,
+           "demo_tail": "",
            "phrase_book": rp.PhraseBook() if rp else None}
     splitter = FrameSplitter()
 
@@ -1286,10 +1418,15 @@ def run(args):
     if _speaker is None:
         print("[i] 没有接入主语音链路 —— 提醒只弹卡不出声（单独跑本脚本时正常）")
 
-    ok = refresh(ser, ctx, args, force=True, reason="首次")
-    if not ok and args.dry is False:
-        print("[i] 首轮没发出去（后端没起来？）。没关系，下面每 %.0fs 自动重试。" % args.interval)
-    refresh_sched(ser, ctx, args, force=True, reason="首次")
+    # 串口没打开时先别推：推了也是全丢，还会刷一屏"串口写失败"
+    if ser is not None or args.dry:
+        ok = refresh(ser, ctx, args, force=True, reason="首次")
+        if not ok and args.dry is False:
+            print("[i] 首轮没发出去（后端没起来？）。没关系，下面每 %.0fs 自动重试。"
+                  % args.interval)
+        refresh_sched(ser, ctx, args, force=True, reason="首次")
+    else:
+        print("[i] 串口暂不可用，先不推数据；等串口连上后会自动全量重推")
 
     if args.once:
         if ser:
@@ -1320,6 +1457,28 @@ def run(args):
                     print("[!] 串口读取出错（会尝试重开串口）：%s" % e)
 
             now = time.time()
+
+            # 【串口还没打开成功：这一轮只做"重试打开"这一件事】
+            # 以前这里没有任何处理 —— run() 开头打不开就直接抛 RuntimeError
+            # 出去了，桥接线程死掉，屏幕永远等不到数据（见 _open_serial 的说明）。
+            # 现在留在循环里每 REOPEN_SEC 秒试一次，试开成功就全量重推。
+            if ser is None and not args.dry:
+                if now - ctx.get("last_reopen", 0.0) >= REOPEN_SEC:
+                    ctx["last_reopen"] = now
+                    ser, port = _open_serial(args, open_state)
+                    if ser is not None:
+                        splitter = FrameSplitter()      # 半截帧作废
+                        ctx["need_push"] = True
+                        ctx["need_sched_push"] = True
+                        ctx["boot_at"] = 0.0            # 重新等一次启动横幅
+                    else:
+                        open_state.setdefault("last_hint", now)
+                        if now - open_state["last_hint"] >= 30.0:
+                            open_state["last_hint"] = now
+                            print("[i] 屏幕串口仍未可用（被占用 / 没插好 / 板子没上电？），"
+                                  "每 %.0f 秒自动重试一次……" % REOPEN_SEC)
+                time.sleep(0.2)
+                continue
 
             # 【提醒扫描放最前 —— 这是整段循环的第一优先级】
             # 【为什么】refresh / refresh_sched / 定期重发都要往串口写十几帧，
@@ -1436,7 +1595,9 @@ def run(args):
                         time.sleep(0.3)
                         ser = serial.Serial(port, args.baud, timeout=0.05)
                         ser.reset_input_buffer()
+                        _SER[0] = ser            # 演示播报的下行要跟着换新串口
                         splitter = FrameSplitter()      # 半截帧作废，别带着脏缓冲
+                        ctx["demo_tail"] = ""           # 半行同理（演示播报的上行）
                         _WRITE_ERR[0] = False
                         _READ_ERR[0] = False
                         # 重连后板子可能重启过，强制重推一遍
@@ -1450,6 +1611,7 @@ def run(args):
     except KeyboardInterrupt:
         print("\n退出。")
     finally:
+        _SER[0] = None
         if ser:
             ser.close()
 

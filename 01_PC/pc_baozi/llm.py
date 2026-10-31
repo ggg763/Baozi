@@ -56,6 +56,35 @@ def current_date_str() -> str:
     return f"{now.year}年{now.month}月{now.day}日 星期{_WEEKDAY_CN[now.weekday()]}"
 
 
+def current_time_str() -> str:
+    """现在几点，供 prompt 注入（包子应能回答"现在几点"）。
+
+    为什么要单独一行：原来只注入了日期，模型不知道钟点 —— 问"几点了"
+    它只能编一个（或者答"我不太清楚"）。桌面机器人报时是最基本的诉求，
+    而 7B 模型又算不出当前时间，只能把真实值喂给它。
+
+    带时段提示（"下午"）是有意的：用户常问"现在上午还是下午"，
+    模型自己把 14:23 换算成"下午"偶尔会错，直接给它省事。
+    """
+    now = datetime.datetime.now()
+    h = now.hour
+    if h < 5:
+        span = "凌晨"
+    elif h < 9:
+        span = "早上"
+    elif h < 12:
+        span = "上午"
+    elif h < 13:
+        span = "中午"
+    elif h < 18:
+        span = "下午"
+    elif h < 19:
+        span = "傍晚"
+    else:
+        span = "晚上"
+    return f"{now.hour:02d}:{now.minute:02d}（{span}）"
+
+
 def parse_memorize(raw) -> Dict[str, str]:
     """解析模型输出的 memorize 字段 → {键: 值}。
 
@@ -375,7 +404,8 @@ class Llm:
         raise NotImplementedError
 
     def chat_ex(self, user_text: str, vision_context: str = "",
-                calc_context: str = "", web_context: str = "") -> Tuple[str, str, str, str]:
+                calc_context: str = "", web_context: str = "",
+                time_context: str = "") -> Tuple[str, str, str, str]:
         """返回 (回复文本, 情绪, 意图, 情感强度)。
 
         vision_context: 若本轮已经调用过视觉（用户在看图），把图像描述传进来，
@@ -383,6 +413,9 @@ class Llm:
         calc_context:   若本轮话里有算式，把代码算好的精确结果传进来
             （如 "123*456=56088"），避免 7B 自己做多位数乘法算错。
         web_context:    若本轮需要联网检索（问天气），把查到的实时数据传进来。
+        time_context:   若本轮在问时间/日期，把代码取到的真实时间传进来。
+            （提示词状态行里也写了时间，但 7B 常常视而不见，照样编一个
+             钟点；确定性事实就该由代码给，参考 calculator.py 的做法。）
         情感强度 intensity: low / medium / high，用于 TD1601 调制动作幅度与速度。
         """
         raise NotImplementedError
@@ -436,6 +469,7 @@ class OpenAiCompatLlm(Llm):
         emotion_memory: Optional[EmotionMemory] = None,
         num_ctx: int = 2048,
         memory=None,
+        disable_think: bool = False,
     ) -> None:
         try:
             from openai import OpenAI  # type: ignore
@@ -456,9 +490,15 @@ class OpenAiCompatLlm(Llm):
         self._messages: List[Dict[str, str]] = []
         self.emotion_memory = emotion_memory
         self._num_ctx = int(num_ctx)
+        # Qwen3 这类思维链模型默认先把推理写进 reasoning 字段、content 留空，
+        # 导致正文被吃掉（降智）。disable_think=True 时在请求里带 think:false，
+        # 让它跳过思考直接输出正文。
+        self._disable_think = bool(disable_think)
         # 记忆系统（短期历史 + 长期画像）。给了就用它，否则退回内置 _messages。
         self.memory = memory
         print(f"[llm] OpenAI 兼容后端: {base_url} / {model}")
+        if self._disable_think:
+            print("[llm] 已禁用思维链（reasoning_effort=none）")
         print(f"[llm] 固定人设已加载（{len(self._system)} 字符）")
         if self.memory is not None:
             print("[llm] 记忆系统已接入（短期历史 + 长期画像）")
@@ -526,7 +566,8 @@ class OpenAiCompatLlm(Llm):
 
     # ------------------------------------------------------------------
     def _render_system(self, user_text: str, vision_context: str = "",
-                       calc_context: str = "", web_context: str = "") -> str:
+                       calc_context: str = "", web_context: str = "",
+                       time_context: str = "") -> str:
         """把固定人设模板里的占位符填上当前状态（动态调整情感/意图）。
 
         模板里的占位符（见 prompts/system_prompt.txt）：
@@ -534,6 +575,7 @@ class OpenAiCompatLlm(Llm):
             {robot_energy}     精力 0~100
             {friendship_level} 亲密度（暂无长期记忆，给固定值 50）
             {current_date}     今天的日期 + 星期
+            {current_time}     现在几点（含上午/下午）
             {user_input}       本轮用户输入
         同时也兼容 Baozi_PC 原模板的 {{xxx}} 写法。
         """
@@ -549,6 +591,8 @@ class OpenAiCompatLlm(Llm):
             "robot_energy": str(energy),
             "friendship_level": "50",
             "current_date": current_date_str(),
+            # 每轮都重新取一次：同一轮对话里可能跨分钟，缓存会导致报时不准
+            "current_time": current_time_str(),
             "user_input": user_text,
         }
         for key, val in mapping.items():
@@ -583,14 +627,24 @@ class OpenAiCompatLlm(Llm):
                 "请用这些数据如实回答，不要编造或改动数字。\n"
             )
 
+        # 本轮在问时间/日期 -> 注入真实时间（7B 算不出"现在几点"，也不该猜）
+        if time_context:
+            text += (
+                "\n\n# 当前时间（系统实时读取，直接用这个数字）\n"
+                f"{time_context}\n"
+                "照这个回答，不要自己推算，也不要说不知道。\n"
+            )
+
         return text + self.OUTPUT_INSTRUCTION
 
     def _build_messages(self, user_text: str, vision_context: str = "",
-                        calc_context: str = "", web_context: str = "") -> List[Dict[str, str]]:
+                        calc_context: str = "", web_context: str = "",
+                        time_context: str = "") -> List[Dict[str, str]]:
         messages: List[Dict[str, str]] = [
             {"role": "system",
              "content": self._render_system(user_text, vision_context,
-                                            calc_context, web_context)}
+                                            calc_context, web_context,
+                                            time_context)}
         ]
         # ★ 看图时不带历史（2026-11 修）：视觉是"即时感知"，跟过去的聊天
         #   历史不该互相串。原实现把最近 20 轮历史全带上，其中残留上一轮
@@ -680,20 +734,26 @@ class OpenAiCompatLlm(Llm):
 
     # ------------------------------------------------------------------
     def chat_ex(self, user_text: str, vision_context: str = "",
-                calc_context: str = "", web_context: str = "") -> Tuple[str, str, str, str]:
+                calc_context: str = "", web_context: str = "",
+                time_context: str = "") -> Tuple[str, str, str, str]:
         """返回 (回复文本, 情绪, 意图, 情感强度)。
 
         vision_context: 本轮视觉描述（见基类说明）
         calc_context:   本轮算式的精确计算结果（如 "123*456=56088"）
         web_context:    本轮联网检索结果（如天气）
+        time_context:   本轮真实时间/日期（如 "现在是 14:28（下午）"）
         """
         resp = self._client.chat.completions.create(
             model=self._model,
             messages=self._build_messages(user_text, vision_context,
-                                          calc_context, web_context),
+                                          calc_context, web_context,
+                                          time_context),
             temperature=self._temperature,
             max_tokens=self._max_tokens,
-            extra_body={"options": {"num_ctx": self._num_ctx}},
+            extra_body={
+                "options": {"num_ctx": self._num_ctx},
+                **({"reasoning_effort": "none"} if self._disable_think else {}),
+            },
         )
         choice = resp.choices[0]
         msg = choice.message
@@ -831,7 +891,8 @@ class EchoLlm(Llm):
     #    整条 TTS/播放都测不到（离线自测和无模型调试都踩过）。
     #    返回值必须与基类契约一致：(回复, 情绪, 意图, 强度)。
     def chat_ex(self, user_text: str, vision_context: str = "",
-                calc_context: str = "", web_context: str = ""):
+                calc_context: str = "", web_context: str = "",
+                time_context: str = ""):
         return (f"{self._prefix}{user_text}", "neutral", "chat", DEFAULT_INTENSITY)
 
     def reset(self) -> None:
@@ -885,6 +946,7 @@ def make_llm(cfg, emotion_memory: Optional[EmotionMemory] = None, memory=None) -
             emotion_memory=emotion_memory,
             num_ctx=getattr(cfg, "llm_num_ctx", 2048),
             memory=memory,
+            disable_think=bool(getattr(cfg, "llm_disable_think", False)),
         )
     if backend == "echo":
         return EchoLlm()
