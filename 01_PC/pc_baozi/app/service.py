@@ -58,8 +58,23 @@ class AppService:
         return self._started
 
     @property
+    def bind_host(self) -> str:
+        """uvicorn 监听用的地址。0.0.0.0 = 局域网可达（手机小程序要这个）。"""
+        return getattr(self.cfg, "app_backend_host", "127.0.0.1")
+
+    @property
     def api_base(self) -> str:
-        host = getattr(self.cfg, "app_backend_host", "127.0.0.1")
+        """本机访问后端的地址。
+
+        ⚠️ 不能直接用 bind_host：`0.0.0.0` / `::` 是"监听所有网卡"，**不是**
+        可连接地址。app/link.py 拿这个串去连后端，绑 0.0.0.0 时若原样返回
+        `http://0.0.0.0:8000`，连接会时通时不通（Windows 上尤其怪）。
+        所以这里一律归一成回环——手机端要用的地址是 PC 的局域网 IP，
+        那个由小程序自己配（见 app/miniprogram/app.js 的注释）。
+        """
+        host = self.bind_host
+        if host in ("", "0.0.0.0", "::", "[::]"):
+            host = "127.0.0.1"
         port = int(getattr(self.cfg, "app_backend_port", 8000))
         return f"http://{host}:{port}"
 
@@ -104,7 +119,8 @@ class AppService:
 
     # -------------------------------------------------------------- 后端子进程
     def _port_in_use(self) -> bool:
-        host = getattr(self.cfg, "app_backend_host", "127.0.0.1")
+        # 探测"是否已有后端在跑"必须打回环地址（不能打 0.0.0.0）
+        host = "127.0.0.1"
         port = int(getattr(self.cfg, "app_backend_port", 8000))
         try:
             with socket.create_connection((host, port), timeout=0.3):
@@ -123,7 +139,7 @@ class AppService:
                      "需要时执行：pip install -r app/backend/requirements.txt")
             return
 
-        host = getattr(self.cfg, "app_backend_host", "127.0.0.1")
+        host = self.bind_host
         port = str(int(getattr(self.cfg, "app_backend_port", 8000)))
         cmd = [sys.executable, "-m", "uvicorn", "main:app",
                "--host", host, "--port", port, "--log-level", "warning"]
@@ -139,7 +155,14 @@ class AppService:
             self._backend = None
             return
 
-        self.log(f"[app] 后端已启动（{self.api_base}，pid={self._backend.pid}）")
+        self.log(f"[app] 后端已启动（本机 {self.api_base}，pid={self._backend.pid}）")
+        if self.bind_host in ("0.0.0.0", "::", ""):
+            ip = self._lan_ip()
+            if ip:
+                base = f"http://{ip}:{port}"
+                self.log(f"[app] 手机小程序请访问 {base}（手机与 PC 要在同一 WiFi）")
+                self.log(f"[app] 小程序 Console 里执行一次："
+                         f"wx.setStorageSync('apiBase', '{base}')")
         self._backend_thread = threading.Thread(
             target=self._watch_backend, name="app-backend", daemon=True)
         self._backend_thread.start()
@@ -238,3 +261,19 @@ class AppService:
             return True
         except Exception:  # noqa: BLE001
             return False
+
+    @staticmethod
+    def _lan_ip() -> str:
+        """本机局域网 IP（拿不到就返回空串）。只用于给手机端提示该填什么地址。
+
+        用 UDP connect 让内核挑出口网卡：不实际发包，也不依赖外网可达。
+        """
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                s.connect(("8.8.8.8", 80))
+                return s.getsockname()[0]
+            finally:
+                s.close()
+        except OSError:
+            return ""

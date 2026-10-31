@@ -250,7 +250,10 @@ class Config:
     #    那个端口归 voice_server.py 独占，起第二个会直接撞"地址已在使用"。
     app_enabled: bool = True             # 总开关：False = 完全不碰 app 那一套
     app_backend_autostart: bool = True   # 自动起 FastAPI 后端（已有人在跑则跳过）
-    app_backend_host: str = "127.0.0.1"
+    # 监听地址。0.0.0.0 = 所有网卡，手机小程序才连得上（访问 http://<PC 局域网 IP>:8000）。
+    # 只给本机用可改 127.0.0.1 —— 注意 0.0.0.0 不是可连接地址，本机内部
+    # （app/link.py 的屏幕桥接）会归一成回环去连，见 app/service.py 的 api_base。
+    app_backend_host: str = "0.0.0.0"
     app_backend_port: int = 8000
     app_board_port: str = ""             # TD1601 屏幕串口，空 = 自动握手识别
     app_board_baud: int = 115200
