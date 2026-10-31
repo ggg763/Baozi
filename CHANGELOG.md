@@ -7,6 +7,69 @@
 
 ---
 
+## 2026-10-31 · 二维码配网上线（PC 自动下发 + UART0 行缓冲修正）
+
+### 为什么
+
+TD1601 的 NET 页一直显示 `waiting for network / from ESP32 over UART3`。查下来
+**板子侧其实早就写完了**（`qrgen` 编码器、`net_card` 绘制、`net_link` 的
+`QR:`/`NET:` 解析都在），缺的是三件事，而且都是一句话就能补的：
+
+1. **没人发码**：ESP32 固件里没有 `QR:`/`NET:` 的下发代码，`pc_baozi/main.py`
+   也没接，只有台架脚本。
+2. **PC 侧前缀表漏了**：`td1601.py` 的 `_CTRL_FOR_PREFIX` 只认
+   `EMO/INTENT/INTENSITY/TRACK`，`send_line("QR:...")` 会被打成
+   `[td] 未知命令前缀，已忽略` 后**静静丢掉**。
+3. **UART0 收行上限 64**：`src/uart_hal.c` 的 `LINE_MAX=64`，而
+   `line_feed()` 对超长行是**整行丢弃**。UART3 那条路（`uart_esp.c` 的
+   `ESP_LINE_MAX`）早就是 160，唯独 PC 直连的 UART0 漏了。
+
+### 改了什么
+
+| 端 | 文件 | 改动 |
+|---|---|---|
+| PC | `pc_baozi/wifi_cred.py`（新增） | `netsh` 读本机 SSID/口令 → 拼 `WIFI:` 串 → 三条上限（159 字节 / 127 字节 / ASCII）校验。规则只此一份 |
+| PC | `pc_baozi/td1601.py` | `_CTRL_FOR_PREFIX` 补 `"QR": 0x0B`、`"NET": 0x0B`（CTRL_TD_TEXT） |
+| PC | `pc_baozi/main.py` | 新增 `--no-qr` 与 `_start_provision_qr()`：连上 ESP32 → 停 3s（等板子 `net_link_init()` 的 reset 过去）→ 推 `NET:1` + `QR:`，只推一次 |
+| PC | `pc_baozi/config.py` | 新增 `provision_qr_enabled = True` |
+| PC | `pc_baozi/tools/push_qr.py`（新增） | PC→UART0 直连的兜底工具，零参数即自动读 WiFi + 选串口 + 读回 `[NET] qr set` 给结论 |
+| 固件 | `src/uart_hal.c` | `LINE_MAX` 64 → 160（bss +384B） |
+| 固件 | `UserFolder/app_core.c` | 取行缓冲 `line[64]` → `line[160]` |
+| 文档 | `UserFolder/doc/qr_provision.md` | §5 改写为"主路径 = main.py 自动推"，补前缀表这个坑；§7 补两条 UART 的行缓冲 |
+
+### 怎么验证
+
+- 固件全量编译通过：`text 109604 / data 652 / bss 60624`。
+- `qr_dump`（`_probe/qr/`）实测本机真实 payload 43 字节 → `VER 4 SIZE 33`；
+  127 字节满容量 → `VER 8 SIZE 49`，卡片区按 `pick_scale(200)` 放大后不溢出。
+- 用 mock `send_frame` 验证 `QR:`/`NET:` 现在带 `ctrl=0x0B` 发出，
+  `EMO:` 仍 `0x09`，`TRACK:` 仍 `0x0B`。
+- `push_qr.py --dry-run / --no-pass / --ip / --raw` 四种组合输出正确；
+  中文 SSID、超长行、payload 超限都被提前拦下。
+- 屏上出码：`python main.py` 后控制台打印 `[qr] 配网码已推给屏幕：SSID=...`。
+
+### 注意
+
+- 只推一次是**有意**的：板子每收到 `QR:` 都会 `ui_app_show_net()` 跳回 NET 页，
+  NET 页按设计不自动回落，周期重推会打断正常对话。想安静开机用 `--no-qr`。
+- ESP32 侧一行没改 —— 复用的是既有的 `CTRL_TD_TEXT`（"任意一行，原样转发给
+  TD1601"）通道，和 `TRACK:ON` 完全同路。
+
+---
+
+## 2026-10-31 · TD1601 固件存档同步到当前工程
+
+`03_TD1601/baozi` 这份存档落后于真实工程（SDK 内 `projects/baozi`）：
+17 个文件缺、41 个文件内容不同，其中就包括**整个配网模块**（`UserFolder/qr/*`、
+`src/net_link.c`、`include/net_link.h`）以及 `demo/`、`face_picker.*`、
+`voice_link.*`。照原样推上仓库，等于发布一份缺功能的固件。
+
+现已把工程当前状态全量覆盖到存档（排除 `Obj/`、`Lst/`、`face_report.json` 等
+构建产物与生成物）。此后改固件的流程是：**先改 SDK 工程，再同步到本存档**，
+不要直接改存档（它不在编译路径里，改了不起作用）。
+
+---
+
 ## 2026-10-28 · build.bat 构建缓存自愈
 
 拆分 `wifi_secrets.h` 时踩到一个坑：临时把该文件移走再放回，下一次编译直接报

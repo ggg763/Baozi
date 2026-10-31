@@ -296,6 +296,42 @@ run.bat                       # 语音 + 视觉 + 情感 + 卡片，全部拉起
 `run.bat` 会自动：起语音服务 → 连 ESP32 → 注入视觉 → 起 FastAPI 后端(:8000)
 → 起屏幕桥接线程。关窗口即全停。
 
+### 3.7 二维码配网（扫码把手机连到同一个 WiFi）
+
+TD1601 第 6 张卡片（NET 页）显示一张二维码，手机相机扫码即可连上同一个 WiFi
+—— 评审/观众不用手输密码，也方便打开 ESP32 的网页控制台。
+
+**正常流程**（不需要任何额外操作）：连上 ESP32 后 `main.py` 会读本机当前 WiFi
+（`netsh`，含口令），把两行文本经 `CTRL_TD_TEXT` 发下去：
+
+```
+NET:1;<ssid>                          ← 屏上跳到 NET 页
+QR:WIFI:T:WPA;S:<ssid>;P:<pwd>;;      ← 板子自己 qrgen 编码并画到屏上
+```
+
+ESP32 收到 `0x0B` 帧后原样转发到 PB18，TD1601 的 `src/net_link.c` 解析、`UserFolder/qr/net_card.c` 绘制。
+控制台会打印 `[qr] 配网码已推给屏幕：SSID=...`。
+
+- 只推**一次**：板子每收到一条 `QR:` 都会 `ui_app_show_net()` 跳回 NET 页，
+  而 NET 页按设计不自动回落（要举着手机扫），周期重推会打断正常对话。
+- 不想开机跳这一页：`python main.py --no-qr`。
+- 没有 ESP32、或想单独验证屏幕：`01_PC/pc_baozi/tools/push_qr.py`——PC 的
+  USB-TTL 直连 UART0，零参数即自动读本机 WiFi + 选串口 + 推码，并把板子的
+  `[NET]` 回显读回来给结论。
+
+**三个硬限制**（改上游时别踩）：
+
+| 限制 | 来源 | 超了会怎样 |
+|---|---|---|
+| 一行 ≤ 159 字节 | 固件 `uart_hal.c` 的 `LINE_MAX=160`（含结束符）、`uart_esp.c` 的 `ESP_LINE_MAX` 同值 | **整行丢弃**（不截断，截断会造出幽灵命令） |
+| 二维码内容 ≤ 127 字节 | `UserFolder/qr/net_card.h` 的 `NET_PAYLOAD_MAX=128` | `[NET] qr rejected`，屏上不出码 |
+| 只收可打印 ASCII | `uart_hal.c` 的 `line_feed()` 丢弃非 ASCII 字节 | 中文 SSID 出来的是一条坏码 |
+
+排障：屏幕一直停在 `waiting for network / from ESP32 over UART3` = 板子一次都没
+收到 `QR:` 行。看 UART0 日志里有没有 `[NET] qr set`（有 = 编码成功，问题在跳页/显示）
+/ `[NET] qr rejected`（编码失败）/ 什么都没有（UART3 那一段没传到）。协议与时序
+细节见 `03_TD1601/baozi/UserFolder/doc/qr_provision.md`。
+
 ---
 
 ## 4. 硬件接线速查
@@ -306,7 +342,7 @@ run.bat                       # 语音 + 视觉 + 情感 + 卡片，全部拉起
 | I2S 功放 BCLK/LRC/DIN | `GPIO38 / 39 / 40` | 功放 SD/EN → `GPIO41` |
 | ESP32 → TD1601 | `GPIO14` → `PB18` | **只有这一根**，115200-8N1 |
 | 摄像头 | 板内固定 GPIO4~18 | OPI PSRAM 占 GPIO33~37，避开 |
-| 舵机 YAW / PITCH | TD1601 `PA0` / `PA25` | PWM_CH0 / PWM_CH2 |
+| 舵机 YAW / PITCH | TD1601 `PA29` / `PA27` | pinmap 6 / 4 → csi_ch 3 / 2（以 `UserFolder/servo_test/servo_pins.h` 为准） |
 | 红外三路 | TD1601 `PB22 / PB23 / PB29` | 跟随 + 近距保护 |
 | 触摸 | TD1601 I2C0 `PA21/PA22` | INT `PB2`，RST `PB1` |
 | 屏幕 | TD1601 QSPI 4 线 | 480×480 ST7701S |
@@ -339,7 +375,9 @@ run.bat                       # 语音 + 视觉 + 情感 + 卡片，全部拉起
 | PC 视觉链路 | `qwen3-vl:2b` 走 Ollama，**100% GPU**，1.1–1.4 s/次 |
 | PC 目标检测 | YOLOv8n 25 ms/帧（GPU 与 CPU 持平，小模型传输开销抵消） |
 | PC 语音识别 | SenseVoiceSmall 本地缓存离线加载，`cuda:0`，0.6 s 推理 |
-| TD1601 编译 | 通过，`text 96132 / data 644 / bss 48656` |
+| TD1601 编译 | 通过，`text 109604 / data 652 / bss 60624`（含触摸/卡片 UI/配网二维码） |
+| **TD1601 上机** | 通过：屏幕 480×480 点亮、双舵机独立输出、红外三路跟随、触摸手势、卡片 UI、参数化表情 |
+| **二维码配网** | 通过：PC 下发 `QR:` → 板子 `qrgen` 编码 → 屏上出码（`push_qr.py` 台架直连亦通） |
 | ESP32 编译 | 通过（core 3.2.1-cn），1,058,082 B / 33% APP，0 警告 |
 | **ESP32 实机联网** | 通过：`WiFi 已连接 "<热点名>", IP=192.168.x.x, RSSI=-29 dBm` |
 | **PC ↔ ESP32 实机联调** | 通过（mock ASR/echo LLM/tone TTS）：发现 → TCP → HELLO → 麦克风音频 → VAD → 7 轮回放 |
@@ -349,7 +387,6 @@ run.bat                       # 语音 + 视觉 + 情感 + 卡片，全部拉起
 ### 未验证（缺硬件）
 
 - 真实 ASR/LLM/TTS 端到端（本次用 mock 后端跑通链路，模型侧此前已单独验证）
-- TD1601 屏幕/舵机联动（固件编译通过，未上电联调）
 
 ### 实机联调中修掉的三个断点
 
@@ -389,7 +426,7 @@ run.bat                       # 语音 + 视觉 + 情感 + 卡片，全部拉起
 | 内容 | 位置 |
 |---|---|
 | PC / ESP32 源码 | 本包 `01_PC`、`02_ESP32` |
-| TD1601 源码 | SDK 内 `projects/baozi`（不在本包，见 `03_TD1601`） |
+| TD1601 源码 | 权威副本在 SDK 内 `projects/baozi`；本包 `03_TD1601/baozi` 是**同步过来的完整存档**（2026-11 已对齐，含配网/演示/表情选择等模块） |
 | 预编译 ESP32 固件 | **不入库**（镜像里含 WiFi 明文）：本机用 `02_ESP32/build.bat` 生成到 `firmware/` |
 | 模型权重 | **不随包分发**：`yolov8n.pt` 首次运行自动下载 |
 | ASR 模型 | SenseVoiceSmall 首次运行从 ModelScope 下载（约 900 MB） |
