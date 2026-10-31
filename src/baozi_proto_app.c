@@ -31,6 +31,7 @@
 #include "ui_app.h"
 #include "habit_store.h"
 #include "sched_store.h"
+#include "emotion/emotion_fsm.h"    /* emotion_fsm_command_emotion：情绪层同步 */
 
 /* 情绪编号 → 参数化脸的名字。
  * face_model.c 里只有 7 个模型：neutral / happy / sad / angry / surprised /
@@ -45,12 +46,35 @@ static const char *k_emo_name[7] = {
     "angry"       /* 0x06 EMOTION_ANGRY     */
 };
 
+/* 同一批编号 → 【情绪层】的名字（emotion_fsm_command_emotion 的入参）。
+ * 和 k_emo_name 只差一项：SLEEPY 在情绪层是"心情"（mood = sleeping），
+ * 而在屏幕上是姿势名 asleep。喂错了的后果是：心情层下一拍用
+ * face_ui_mood() 把屏幕重新拉回"醒着的脸"。 */
+static const char *k_emo_state[7] = {
+    "neutral",    /* 0x00 */
+    "happy",      /* 0x01 */
+    "sad",        /* 0x02 */
+    "surprised",  /* 0x03 */
+    "sleeping",   /* 0x04 */
+    "neutral",    /* 0x05 */
+    "angry"       /* 0x06 */
+};
+
 void BAOZI_SetEmotion(uint8_t emo)
 {
     if (emo > EMOTION_ANGRY) {
         return;   /* 协议层已挡一次，这里再兜一层 */
     }
     printf("[BaoZi] emotion -> 0x%02X (%s)\r\n", emo, k_emo_name[emo]);
+
+    /* ★ 两件事，顺序不能省（2026-11 实机问题）：
+     *   ① emotion_fsm_command_emotion() 改【情绪层】—— 情绪/心情状态机跟着变；
+     *   ② ui_app_force_emotion()       改【屏幕】—— 无论当前在卡片层还是表情态，
+     *      都立刻回到表情态并把这张脸画上去。
+     * 原来只有 ②，屏幕是变了、情绪层没变，而 emotion_fsm_step() 每拍都用
+     * emo_current_name() 重新同步屏幕 —— 于是 PC/ESP32 发来的表情只闪一下就被
+     * 拉回原来的情绪（触摸手势用 emo_force 定过的 loving/angry 最明显）。 */
+    emotion_fsm_command_emotion(k_emo_state[emo]);
     ui_app_force_emotion(k_emo_name[emo]);
 }
 
@@ -89,6 +113,9 @@ void BAOZI_SetServo(uint8_t id, uint8_t angle)
 void BAOZI_Reset(void)
 {
     printf("[BaoZi] reset\r\n");
+    /* 复位同样要动情绪层：只把脸画成 neutral 的话，下一拍就会被情绪同步拉回去
+     * （理由见 BAOZI_SetEmotion）。 */
+    emotion_fsm_command_emotion("neutral");
     ui_app_force_emotion("neutral");   /* 回到待机脸 */
     /* 舵机回中位：已移交 servo_core，接进来后在这里调它的 center 接口 */
 }

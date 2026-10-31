@@ -51,7 +51,7 @@ TD1601，TD1601 自己算二维码、画在全屏或第 5 张卡片上。** 手�
 
 界面两档：
 
-* **卡片页（第 5 页）**：标题 + 二维码 + 状态 + SSID/IP。长按进卡片层，左右滑到 NET。
+* **卡片页（第 5 页）**：标题 + 二维码 + 状态 + SSID/IP。双指按住两只眼睛进卡片层，左右滑到 NET。
 * **全屏码**：在卡片页点一下。模块从 6~7px 放大到 13~14px，手机对焦明显更快；
   再点一下退回卡片页。
 
@@ -132,7 +132,38 @@ PC 侧那半（收 UDP 拿凭证）可选：如果 ESP32 自己开热点让手�
 
 ## 5. PC 侧
 
-### `net_share.py`（`code/projects/Baozi_PC/`）
+### 主路径：`main.py` 启动时自动推（走 ESP32，已在用）
+
+正常跑 `python main.py` 就够了 —— 不需要任何额外脚本、不需要串口：
+
+1. 等 ESP32 连上来（最多 180s，和开机语音同一套轮询）；
+2. 再等 3s，让板子把 `ui_app` / `net_link_init()` 跑完（`net_link_init()` 会
+   `net_card_reset()`，推早了会被这次 reset 清掉）；
+3. 读本机 WiFi（`netsh`，含口令）→ `td_link.send_line("NET:1;<ssid>")` +
+   `send_line("QR:WIFI:...")`，走 `CTRL_TD_TEXT`，ESP32 原样转发到 PB18。
+
+只推**一次**，不周期重推：板子每收到一条 `QR:` 都会 `ui_app_show_net()` 把屏
+拉回 NET 页，而 NET 页按设计不自动回落，周期推会让人正常聊天时被反复抢屏。
+
+相关文件与开关：
+
+| 位置 | 作用 |
+|---|---|
+| `pc_baozi/main.py` → `_start_provision_qr()` | 起线程、等连接、推两行 |
+| `pc_baozi/wifi_cred.py` | 读 `netsh` 凭证 + 拼 `WIFI:` 串 + 长度/ASCII 校验（**规则只有这一份**） |
+| `pc_baozi/td1601.py` → `_CTRL_FOR_PREFIX` | 必须含 `"QR": 0x0B` / `"NET": 0x0B` |
+| `config.py` → `provision_qr_enabled` | 默认 `True`；`python main.py --no-qr` 关掉 |
+
+⚠️ **踩过的坑**：`Td1601Link.send_line()` 是按 `_CTRL_FOR_PREFIX` 查表决定控制帧
+码的，表里没有的前缀会打一行 `[td] 未知命令前缀，已忽略` 然后**静静丢掉**。
+TD1601 侧早就支持 `QR:`/`NET:` 了，但 PC 侧这张表一直没加 —— 所以曾经
+"改完板子、重跑 main.py，屏幕还是 waiting for network"。
+
+### `net_share.py`（可选，ESP32 侧还没接）
+
+把本机 WiFi 凭证用 UDP 广播给 ESP32 的老方案。**目前 ESP32 固件没有监听
+8767**，所以这段只是协议草案 + 脚本就绪状态，走不通；要启用得先按 §4 给
+ESP32 加接收逻辑。
 
 ```bash
 python net_share.py                  # 读本机当前 WiFi，广播给 ESP32
@@ -155,17 +186,33 @@ ESP32 愿意接就回 `{"v":1,"t":"ack","state":"joining"}`（脚本会打印出
 另外，ESP32 现在的 WiFi 凭证是 `config.h` 里编译期写死的 `WIFI_SSID_LIST`；
 接了 `net_share.py` 之后可以把它降级成"兜底"——运行时收到包就用包里的。
 
-### `tools/push_qr.py`（台架联调）
+### `tools/push_qr.py`（PC → UART0 直连，现场最稳的一条路）
 
-绕开 ESP32，直接往 TD1601 的 UART0 敲那几行：
+绕开 ESP32 和射频，PC 的 USB 串口直接接板子 UART0，把那几行文本敲进去。
+放在 `01_PC/pc_baozi/tools/push_qr.py`（`pc_baozi/.venv` 里已装 pyserial）：
 
 ```bash
-python tools/push_qr.py --port COM7 --ssid Baozi-A1B2 --pass 88888888
-python tools/push_qr.py --port COM7 --raw "QR:http://192.168.4.1/"
-python tools/push_qr.py --port COM7 --off
+python tools/push_qr.py                 # 零参数：读本机 WiFi + 自动选串口 + 推码
+python tools/push_qr.py --port COM7     # 多串口时指定（--list 先看有哪些）
+python tools/push_qr.py --raw "QR:http://192.168.4.1/"
+python tools/push_qr.py --off           # 清掉二维码
+python tools/push_qr.py --dry-run       # 只打印将发什么、多长
 ```
 
+它会：① 用 `netsh` 读本机当前连着的 SSID 与口令 → ② 拼 `NET:1;<ssid>` +
+`QR:WIFI:T:WPA;S:<ssid>;P:<pwd>;;` → ③ 发完把板子的 `[NET] ...` 回显读回来，
+直接给结论（`qr set` = 出码了 / `qr rejected` = 编码失败 / 什么都没读到 = 口或
+波特率不对）。
+
 **这是排查顺序的关键**：屏上能出码 → TD1601 侧全通，问题一定在 ESP32 那一段。
+
+两个它替你挡住的前置条件（都来自固件）：
+
+- 一行最多 **159 字节**（`src/uart_hal.c` 的 `LINE_MAX=160` 含结束符），超了
+  **整行丢弃**（不是截断，截断会造出幽灵命令）。
+- 二维码内容最多 **127 字节**（`UserFolder/qr/net_card.h` 的 `NET_PAYLOAD_MAX=128`）。
+- SSID/口令必须是**可打印 ASCII**：`uart_hal.c` 的 `line_feed()` 把非 ASCII 字节
+  直接丢掉，中文 SSID 走这条路会得到一条坏码（屏上字库也没有中文）。
 
 ---
 
@@ -211,8 +258,9 @@ mingw32-make -f Baozi.mk all -j4
 # 末尾 crc32 报错属正常（CDK 之外的步骤）
 ```
 
-当前：**text 101 948 / data 644 / bss 59 560**（v9 表情版是 96 236 / 644 / 48 660；
-配网新增约 +5.7KB text、+10.9KB bss，主要是编码器的两张 57×57 矩阵）。
+当前：**text 109 604 / data 652 / bss 60 624**（2026-11 合并触摸+卡片 UI+行为层
+之后实测；其中配网本身约 +5.7KB text、+10.9KB bss，主要是编码器的两张 57×57 矩阵）。
+`LINE_MAX` 64→160 额外多占 384B bss（UART0 的行队列），可忽略。
 
 ---
 
@@ -220,9 +268,13 @@ mingw32-make -f Baozi.mk all -j4
 
 1. **UART3 单向**。没有 ACK、没有重传。ESP32 必须把"该显示什么"推完就忘 ——
    推失败板子就一直停在旧状态。真要可靠，得让 ESP32 周期性重推（10 秒一次很便宜）。
-2. **行缓冲 160 字节**（`uart_esp.c` 的 `ESP_LINE_MAX`）。最坏一条
-   `QR:WIFI:…` = 117 字节，原来 64 字节会整行丢弃、配网永远收不到。超长仍然整行丢，
-   绝不截断（截断会造出幽灵命令）。
+2. **行缓冲 160 字节**，两条路都要够长：
+   - `uart_esp.c` 的 `ESP_LINE_MAX`（UART3，ESP32 那条）。最坏一条
+     `QR:WIFI:…` = 117 字节，原来 64 字节会整行丢弃、配网永远收不到。
+   - `uart_hal.c` 的 `LINE_MAX`（UART0，PC/串口助手那条）。2026-11 之前也是 64，
+     同样会把 `QR:` 整行吃掉 —— 走 PC 直连时屏上就只剩 `waiting for network`。
+     现在两条都是 160，`app_core.c` 里取行的 `line[160]` 也跟着对齐。
+   超长仍然整行丢，绝不截断（截断会造出幽灵命令）。
 3. **只支持 ASCII**。板载字库是 `FONT.h` 的 `asc2_2412`。中文 SSID 显示成
    `(non-ascii)`，二维码本身没问题。
 4. **`ui_add_text` 只存指针**，字形在 `ui_flush` 时才取。任何要显示的文字缓冲

@@ -5,14 +5,14 @@
  * 迁移对照（PC → C）：
  *   last_interaction_time = time.time()        → s_last_ms（touch 时取当前时基）
  *   idle_seconds = time.time() - last_...      → idle = s_now_ms - s_last_ms
- *   if (idle > 20 && idle <= 30) → BORED       → 同（毫秒化：20000 / 30000）
+ *   if (idle > 20 && idle <= 30) → BORED       → 同（毫秒化：60000 / 180000，已放宽）
  *   elif (idle > 30) → SLEEPING（只触发一次）  → 同（靠 s_mood 判重）
  *   update_interaction() → ACTIVE               → mood_fsm_touch()
  *   wake_up()                                   → mood_fsm_wake()
  *
- * 时基来源：tick(now_ms) 由状态机主循环（emotion_fsm.c）喂入，主循环每 10ms
- * 调一次；动作播放期间动作库的 tick 钩子也会补时间（见 moves_set_tick_hook），
- * 所以哪怕动作一播几秒，idle 计时也不会停。
+ * 时基来源：now_ms 由 emotion_fsm.c 用 csi_tick_get()（SysTick，1 tick = 1ms）
+ * 喂入，是【真实毫秒】；主循环每 10ms 调一次，动作播放期间动作库的 tick 钩子
+ * 也会把它刷成当前 tick。所以 idle 计时与实际墙钟一致，不会因为一拍多长而漂。
  *
  * ⚠️ 硬件动作不在这里做 —— PC 的 state_machine.py 内部直接调
  *    hardware.set_expression/set_led/set_servo；本工程把这些【统一收敛到
@@ -35,7 +35,7 @@ static uint32_t  s_now_ms = 0;          /* 时基（由 tick 推进）*/
 static uint32_t  s_last_ms = 0;         /* 上次交互时刻 */
 static uint32_t  s_last_check_ms = 0;   /* 上次心跳检查时刻 */
 
-/* 空闲降级阈值（默认 = PC 的 20s/30s，可由 mood_fsm_set_thresholds 临时改）*/
+/* 空闲降级阈值（默认 60s/180s，可由 mood_fsm_set_thresholds 临时改）*/
 static uint32_t  s_bored_ms = MOOD_BORED_MS;
 static uint32_t  s_sleep_ms = MOOD_SLEEP_MS;
 
@@ -53,8 +53,10 @@ void mood_fsm_init(void)
     s_now_ms = 0;
     s_last_ms = 0;
     s_last_check_ms = 0;
+    s_bored_ms = MOOD_BORED_MS;     /* 上电回到默认阈值（测试里 set 过的不要带过来）*/
+    s_sleep_ms = MOOD_SLEEP_MS;
     printf("[mood] init: %s (bored>%ums, sleep>%ums)\r\n",
-           mood_name(s_mood), MOOD_BORED_MS, MOOD_SLEEP_MS);
+           mood_name(s_mood), s_bored_ms, s_sleep_ms);
 }
 
 void mood_fsm_touch(void)
@@ -82,11 +84,11 @@ mood_id_t mood_fsm_tick(uint32_t now_ms)
     /* ---- 状态迁移（逐条对应 PC _heartbeat_loop）---- */
     if ((idle > s_bored_ms) && (idle <= s_sleep_ms)) {
         if (s_mood != MOOD_BORED) {
-            s_mood = MOOD_BORED;        /* PC: 20 秒没理我，有点无聊了... */
+            s_mood = MOOD_BORED;        /* 1 分钟没理我，有点无聊了... */
         }
     } else if (idle > s_sleep_ms) {
         if (s_mood != MOOD_SLEEPING) {
-            s_mood = MOOD_SLEEPING;     /* PC: 超过 30 秒没理我，我要睡觉了... */
+            s_mood = MOOD_SLEEPING;     /* 3 分钟没理我，我要睡觉了... */
         }
     }
 
@@ -109,7 +111,7 @@ void mood_fsm_force(mood_id_t m)
     }
 
     /* 显式置位 ACTIVE / IDLE / BORED：按一次"设定"处理，从现在起重新计算空闲时间
-     * （所以 EMO:BORED 之后会保持无聊 30s，然后按 PC 的规则自动降级到 sleeping）。
+     * （所以 EMO:BORED 之后会保持无聊 120s，然后按规则自动降级到 sleeping）。
      * SLEEPING 例外：不重置计时，保持"确实很久没互动"的语义。 */
     s_last_ms = s_now_ms;
     s_last_check_ms = s_now_ms;

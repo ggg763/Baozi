@@ -520,7 +520,7 @@ static void et_handle_cmd(char *line)
         uint32_t sl;
 
         if ((n < 3) || (et_atoi(tok[1], &b) != 0) || (et_atoi(tok[2], &sl) != 0)) {
-            printf("[test] usage: thr <bored_s> <sleep_s>;  thr 0 0 -> back to 20/30\r\n");
+            printf("[test] usage: thr <bored_s> <sleep_s>;  thr 0 0 -> back to 60/180\r\n");
             return;
         }
         if ((b > 3600U) || (sl > 3600U)) {
@@ -584,7 +584,7 @@ void emotion_test(void)
         /* ② 收字节（暂停/回中时没有动作在跑，钩子不会回调，所以这里也要轮询）*/
         et_poll_uart();
 
-        /* ③ 推进心情计时（降级阈值默认 20s/30s，可用 thr 临时缩短）*/
+        /* ③ 推进心情计时（降级阈值默认 60s/180s，可用 thr 临时缩短）*/
         {
             mood_id_t mood = mood_fsm_tick(s_now_ms);
 

@@ -40,6 +40,9 @@ static const emo_state_t s_emo_states[EMO_MAX] = {
 static emo_id_t   s_current = EMO_NEUTRAL;
 static emo_state_t s_state   = { 500, 500, 500 };
 
+/* 前置声明：emo_force 在 emo_reset 之后就要用到，而实现在下面 */
+static int16_t clamp1000(int16_t v);
+
 const char *emo_name(emo_id_t e)
 {
     if ((int)e >= (int)EMO_MAX) {
@@ -117,6 +120,19 @@ void emo_reset(void)
 {
     s_current = EMO_NEUTRAL;
     s_state   = s_emo_states[(int)EMO_NEUTRAL];
+}
+
+/* 直接设定情绪 + 连续状态（脸部手势分级用，见头文件说明）。
+ * 注意这里【不查表】：调用方给的强度就是要生效的强度。 */
+void emo_force(emo_id_t e, int16_t happiness, int16_t energy, int16_t curiosity)
+{
+    if ((int)e >= (int)EMO_MAX) {
+        e = EMO_NEUTRAL;
+    }
+    s_current = e;
+    s_state.happiness = clamp1000(happiness);
+    s_state.energy    = clamp1000(energy);
+    s_state.curiosity = clamp1000(curiosity);
 }
 
 /* ==================== 刺激 → 连续状态 → 漂移 ====================

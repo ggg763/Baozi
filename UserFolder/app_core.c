@@ -3,10 +3,10 @@
  * @brief    主循环编排层实现（见 app_core.h）
  *
  * 一轮做的事（顺序有讲究）：
- *   ① 触摸轮询 → ui_app_handle_gesture()（长按/点击/滑动语义在 ui_app 里）
+ *   ① 触摸轮询 → ui_app_handle_gesture()（点击/滑动/双指长按语义在 ui_app 里）
  *   ② 串口：UART0 二进制帧（uart_hal_poll）+ 文本命令行（EMO:/INTENT:/TRACK:）
  *      → emotion_fsm_feed_line()；UART3 = ESP32 情绪链路（uart_esp_poll）
- *   ③ 用【真实】dt 推进 ui_app_tick()（时钟/长按计时/眨眼都靠它）
+ *   ③ 用【真实】dt 推进 ui_app_tick()（时钟/双指长按计时/眨眼都靠它）
  *   ④ 分片刷屏最多 2 片（每片 8 行），让下一轮尽快回到①
  *
  * ★ dt 用 csi_tick_get()（SysTick，1 tick = 1ms）而不是 csi_tick_get_ms()：
@@ -24,6 +24,8 @@
 #include "ui.h"                     /* ui_flush_busy / ui_flush_step（分片刷屏）*/
 #include "uart_esp.h"               /* uart_esp_init / uart_esp_poll */
 #include "net_link.h"               /* 配网命令 QR: / NET:（v2.1）*/
+#include "demo/demo_show.h"         /* 一键演示命令 DEMOGO / DEMOQUIT / DEMORUN / DEMOWAIT: */
+#include "behavior.h"               /* behavior_note_interaction：触摸算一次交互 */
 #include "emotion/emotion_fsm.h"    /* emotion_fsm_feed_line（文本命令）*/
 #include "app_core.h"
 
@@ -63,7 +65,7 @@ uint32_t app_core_touch_idle_ms(void)
 
 void app_core_init(void)
 {
-    char line[64];
+    char line[160];                 /* 仅为对齐 step 里的收行缓冲，见下面的说明 */
 
     /* 屏幕 + 参数化脸先就绪：emotion_fsm_init() 里的 face_set_bus_callback()
      * 与首帧清屏都要在屏幕初始化之后才有意义。 */
@@ -90,7 +92,9 @@ void app_core_init(void)
         printf("[app] esp uart ready (UART3 PB18/PB19 @115200, from ESP32)\r\n");
     }
 
-    /* 丢掉开机瞬间可能残留的半行文本（PC 重连时常见）*/
+    /* 丢掉开机瞬间可能残留的半行文本（PC 重连时常见）。
+     * 这里的 cap 只是"排空丢弃"，取多大都无所谓；跟 step 里那行一样用 160，
+     * 免得以后又有人把这处 64 当成收行上限（真正的上限在 uart_hal.c）。 */
     while (uart_hal_take_line(line, (int)sizeof(line))) {
         /* 只清空，不执行 */
     }
@@ -115,19 +119,24 @@ void app_core_step(void)
     }
     s_in_step = 1;
 
-    /* ① 触摸：手势语义交给 ui_app（长按/点击/滑动/换页） */
+    /* ① 触摸：手势语义交给 ui_app（点击/滑动/换页/双指长按） */
     {
         uint16_t tx = 0, ty = 0;
         int g = tp_get_gesture(&tx, &ty);
 
         if (g != 0) {
             s_touch_last = csi_tick_get();
+            /* ★ 触摸就是交互：刷新心情层的"3 分钟没人理才睡"计时。
+             *   以前这里只重置了 UI 自己的 s_touch_last / g_idle_ms，心情层
+             *   毫不知情 —— 用户在屏幕上玩，30s 一到照样睡（已修）。 */
+            behavior_note_interaction();
             ui_app_handle_gesture(g, tx, ty);
         }
         tp_idle_check(csi_tick_get());        /* IRQ 丢了别让状态卡死 */
         s_touch_down = tp_is_down() ? 1 : 0;
         if (s_touch_down) {
             s_touch_last = tp_last_touch_ms(); /* 按住期间持续刷新"有操作" */
+            behavior_note_interaction();       /* 按住不动也算有人在操作 */
         }
     }
 
@@ -135,13 +144,24 @@ void app_core_step(void)
      *    两条通路共用 UART0（与 printf 同一根线），字节级分流在 uart_hal.c。 */
     uart_hal_poll();
     {
-        char line[64];
+        /* ★ 160 而不是 64：配网二维码那一行（`QR:WIFI:T:WPA;S:..;P:..;;`）
+         *   就有 45~120 字节，64 时这行要么被 uart_hal 整行丢弃、要么在这里
+         *   被 cap 截成半行 —— 而 net_link 是按整行前缀匹配的，两种都命中不了，
+         *   屏幕上一直停在 "waiting for network"。
+         *   与 uart_hal.c 的 LINE_MAX（160）保持一致。 */
+        char line[160];
         int guard = 0;
         while (uart_hal_take_line(line, (int)sizeof(line)) && guard < 4) {
             guard++;
             /* ★ 配网命令先截走：QR: / NET: 不属于情感状态机的语法。
              * 这条通路让"没有 ESP32 也能台架联调"—— 串口助手敲一行即可。 */
             if (net_link_handle_line(line)) {
+                continue;
+            }
+            /* ★ 一键演示的命令先截走：DEMOGO / DEMOQUIT / DEMORUN / DEMOWAIT:<ms>
+             *   都不属于情感状态机的语法，喂给它只会打一行 "unknown"。
+             *   PC 就是靠这几行把"播报完了、可以演了"送回来的。 */
+            if (demo_show_handle_line(line)) {
                 continue;
             }
             printf("[app] cmd: %s\r\n", line);

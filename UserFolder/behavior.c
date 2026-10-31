@@ -2,11 +2,19 @@
  * @file     behavior.c
  * @brief    UI ↔ 行为层的桥（见 behavior.h）
  *
- * 【红外近距】三路 IR 沿用已定案引脚（PB22 左 / PB23 中 / PB29 右，PORTB，
- * 上拉输入，读到 1 = 有反射）。这是"避障模块"的数字输出，只有阈值没有距离，
- * 所以这里只把它当"有没有东西贴近"用，不做距离量化。
+ * 【红外近距·已按用户要求关闭】三路 IR 沿用已定案引脚（PB22 左 / PB23 中 /
+ * PB29 右，PORTB，上拉输入）。极性：**高 = 未遮挡，低 = 看到反射**（与
+ * track_dual.c 的 td_read_raw 一致）—— 这是"避障模块"的数字输出，只有阈值没有
+ * 距离，所以原先把它当"有没有东西贴近"用来抑制舵机。
  *
- * ⚠️ 跟随模式（TRACK）下必须关掉近距抑制：
+ * ★ 2026-11 用户要求**去掉这条距离保护**（BEHAVIOR_IR_INHIBIT 默认 0）：
+ *   实机上桌沿/机身/凑近的手都会让某一路读到反射，于是 inhibit 常开 →
+ *   舵机一步不动、动作一播就被掐（表现就是"不怎么动 / PLAY 页按了没反应"）。
+ *   现在 `behavior_inhibit()` 只认"手指按在屏幕上"这一条（防夹手，硬约束）。
+ *   需要恢复老行为：编译时加 -DBEHAVIOR_IR_INHIBIT=1（三路 IR 仍在初始化，
+ *   `behavior_ir_near()` 也仍可用，只是不再参与停手判断）。
+ *
+ * ⚠️ 若把近距抑制开回来，跟随模式（TRACK）下必须豁免：
  *    跟随的语义就是"看到目标 → 转过去"，若把"看到"当"贴太近就停手"，
  *    跟随会永远动不了。需要强行打开时改 BEHAVIOR_NEAR_INHIBIT_IN_TRACK = 1。
  *
@@ -38,6 +46,14 @@
 #define BEHAVIOR_NEAR_INHIBIT_IN_TRACK   0
 #endif
 
+/* 红外近距抑制总开关。★ 默认【关】（2026-11 用户要求去掉距离保护），
+ * 理由见文件头：避障模块只有阈值没有距离，桌面场景经常误判"贴太近"。
+ * 关掉之后"手指按屏幕停手"这一条仍然有效（那条是防夹手的硬约束）。
+ * 想恢复老行为：在 Baozi.mk 的 CFLAGS 里加 -DBEHAVIOR_IR_INHIBIT=1，或改这里。*/
+#ifndef BEHAVIOR_IR_INHIBIT
+#define BEHAVIOR_IR_INHIBIT   0
+#endif
+
 #define IR_NEAR_DEBOUNCE 3                   /* 连续 3 拍为近才算"贴太近" */
 
 static csi_gpio_t s_ir;
@@ -62,21 +78,48 @@ void behavior_init(void)
     s_near_cnt  = 0;
     s_near      = 0;
 
+    /* 上电自检：把三路原始电平打出来。极性是"高 = 未遮挡"，所以正常情况
+     * 应该看到 `IR=L1 C1 R1`（三路都高 = 前面什么都没有）。如果上电就是
+     * 0（低 = 看到反射），说明探头没接好、或者一直挡着 —— 距离保护虽然已经
+     * 关掉，红外跟随（TRACK）还要靠这三路，所以这一眼还是值得看。 */
+    {
+        int l = (csi_gpio_read(&s_ir, IR_LEFT_PIN)   != 0U) ? 1 : 0;
+        int c = (csi_gpio_read(&s_ir, IR_CENTER_PIN) != 0U) ? 1 : 0;
+        int r = (csi_gpio_read(&s_ir, IR_RIGHT_PIN)  != 0U) ? 1 : 0;
+
+        printf("[bhv] ir level L%d C%d R%d (1=未遮挡, 0=看到反射)\r\n", l, c, r);
+    }
+
     /* 把自己挂到情感状态机上：FSM 每拍/每个 20ms 播放钩子都会问一次 */
     emotion_fsm_set_inhibit_cb(behavior_inhibit);
 
-    printf("[bhv] ir proximity ready (PB22/PB23/PB29)\r\n");
+    printf("[bhv] ir proximity ready (PB22/PB23/PB29), inhibit=%s\r\n",
+           (BEHAVIOR_IR_INHIBIT != 0) ? "touch+near" : "touch only (near-hold disabled)");
 }
 
 int behavior_ir_near(void)
 {
     int any;
+    int l, c, r;
 
     if (!s_ir_inited) {
         return 0;
     }
-    /* 读到 1 = 该路探头检测到反射（项目里三路都是这么用的，见 track_dual.c）*/
-    any = (csi_gpio_read(&s_ir, IR_ALL_PIN) != 0U) ? 1 : 0;
+
+    /* ★ 极性（2026-10-31 修正）：三路探头都是【高 = 未遮挡、低 = 看到反射】。
+     *   依据 track_dual.c 的 td_read_raw()——那里的注释写得很清楚
+     *   "读三路原始电平 -> 位掩码（1 = 引脚为高 = 未遮挡）"，而且跟随模式是
+     *   上板验证过的。
+     *   本函数原来写的是"读到 1 = 检测到反射"，正好反了：前面什么都没有的时候
+     *   三路都是高，于是被当成"贴太近"→ behavior_inhibit() 恒为 1 →
+     *   emotion_fsm_step() 每拍都在抑制 gate 早返回 → 舵机上电后只停在初始脉宽、
+     *   一步都不走，UI 的动作请求也永远排不到队。表现就是
+     *   "舵机不怎么动 / PLAY 页按了没反应"。 */
+    l = (csi_gpio_read(&s_ir, IR_LEFT_PIN)   != 0U) ? 1 : 0;
+    c = (csi_gpio_read(&s_ir, IR_CENTER_PIN) != 0U) ? 1 : 0;
+    r = (csi_gpio_read(&s_ir, IR_RIGHT_PIN)  != 0U) ? 1 : 0;
+
+    any = (!l || !c || !r) ? 1 : 0;      /* 只要有一路为低 = 那一路看到东西 */
 
     if (any) {
         if (s_near_cnt < 255) {
@@ -94,13 +137,17 @@ int behavior_ir_near(void)
 
 int behavior_inhibit(void)
 {
-    /* ① 手指按在屏幕上：无条件停手（这条最硬，防夹手）*/
+    /* ① 手指按在屏幕上：无条件停手（这条最硬，防夹手）。
+     *    ★ 现在这是【唯一】依据 —— 红外"贴太近"那条距离保护已按用户要求关掉。 */
     if (app_core_touch_down()) {
         return 1;
     }
 
-    /* ② 红外贴太近：跟随模式下不生效（见文件头）*/
-#if BEHAVIOR_NEAR_INHIBIT_IN_TRACK
+    /* ② 红外贴太近（默认关；开回来时跟随模式下仍豁免，见文件头）*/
+#if BEHAVIOR_IR_INHIBIT == 0
+    /* 距离保护关闭：只保留"手指按在屏上"这一条 */
+    (void)0;
+#elif BEHAVIOR_NEAR_INHIBIT_IN_TRACK
     if (behavior_ir_near()) {
         return 1;
     }
@@ -130,4 +177,11 @@ void behavior_request_move(uint8_t move_id)
         return;
     }
     emotion_fsm_request_action(move_id);
+}
+
+void behavior_note_interaction(void)
+{
+    /* 触摸屏上的任何操作都算"人还在跟我玩"：重置心情计时（睡着则唤醒）。
+     * 注意只动心情，不动情绪 —— 摸一下不该改变喜怒哀乐。 */
+    emotion_fsm_note_interaction();
 }

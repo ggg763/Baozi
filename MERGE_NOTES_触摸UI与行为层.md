@@ -78,14 +78,17 @@ board_init()                      串口 console（UART0 115200-8N1）
 1. **开机**：三色自检 → 米黄/白渐变的表情脸。
    串口应出现 `[app] touch ready` / `uart ready` / `esp uart ready` / `emotion + servo ready` / `[bhv] ir proximity ready`。
 2. **点击响应**：在表情态点一下 → 串口 `[GEST] TAP @(x,y)`（`TP_DEBUG` 默认关，可临时开）。
-3. **长按 800ms** → 进入卡片层（TODAY 页），应看到 4 个页码圆点。
-   左右滑 → TIMER(番茄钟三入口) → HABIT → **PLAY（动作/情绪）**。
+3. **双指按两只眼睛 0.55s** → 进入卡片层（TODAY 页），串口 `[UI] both eyes held -> cards`。
+   左右滑 → TIMER(番茄钟三入口) → HABIT → PLAY → FACES → NET。
+   面板若只上报单点，则退化为"单指长按任一只眼睛"（见 `ui_app.c` 的 eye_hold 段）。
 4. **摸脸**：回到表情态，用手指在屏幕**上半部**来回滑 4 次以上 →
    串口 `[UI] PET start` → 脸变 loving，并出现 `[fsm] stimulus kind=1 ...`
    抬手/停手 0.6s → `[UI] PET end`，脸回到当前情绪。
    ⚠️ 摸的时候**不会**跳到卡片层（摸不是长按）。
-5. **安全抑制**：手指按住屏幕不动 → 脖子应**停止运动**（串口 `[fsm] inhibit ON`），
-   松手 1 拍后 `[fsm] inhibit OFF`。把手贴近任一红外探头（非跟随模式）同样触发。
+5. **安全抑制**：手指按住屏幕不动 → 脖子应**停止运动**（串口 `[fsm] inhibit ON (touch)`），
+   松手 1 拍后 `[fsm] inhibit OFF`。
+   ⚠️ 2026-11 起**红外"贴太近就停手"这条距离保护已按用户要求关闭**（`BEHAVIOR_IR_INHIBIT`
+   默认 0）：把手贴近探头不再停手。要恢复：编译加 `-DBEHAVIOR_IR_INHIBIT=1`。
 6. **PLAY 页**：点 NOD / SHAKE / WOW / CUDDLE → 串口 `[fsm] ui request move=...`，
    抬手后脖子按正式流程播一段；点 PRAISE / SCOLD → `[fsm] stimulus kind=2/3`
    （情绪只在连续状态攒够后漂移，不会一下跳到 happy/angry）。
@@ -93,8 +96,8 @@ board_init()                      串口 console（UART0 115200-8N1）
    - 二进制帧：`A5 LL CMD DATA XOR`（习惯 0x11~0x13 / 日程 0x14~0x16 / 提醒 0x17）
    - 文本命令：`EMO:HAPPY` / `INTENT:CHAT` / `TRACK:ON` / `help`
    两者可混发；出现 `[app] cmd: ...` 说明文本行被正确分流。
-8. **红外跟随**（既有功能）：`TRACK:ON` 后舵机交给跟随；此时近距抑制自动豁免
-   （否则"看到目标"会被当成"贴太近"而永远不动）。
+8. **红外跟随**（既有功能）：`TRACK:ON` 后舵机交给跟随；近距抑制默认已关，
+   所以"看到目标"不会被当成"贴太近"（真要开回来见上一节，跟随时仍会自动豁免）。
 
 ---
 
@@ -106,8 +109,8 @@ board_init()                      串口 console（UART0 115200-8N1）
 | 抚摸区域（现在是屏幕上半） | `ui_app.c` 的 `PET_ZONE_Y`（默认 300）|
 | 摸的时候多久给一次刺激 / 强度 | `PET_REPEAT_MS` / `PET_STIM_ONCE` / `PET_STIM_REPEAT` |
 | 停手判定超时 | `PET_IDLE_MS`（默认 600ms）|
-| 红外"贴太近"去抖次数 | `UserFolder/behavior.c` 的 `IR_NEAR_DEBOUNCE`（默认 3）|
-| 跟随模式也要近距抑制 | `behavior.c` 的 `BEHAVIOR_NEAR_INHIBIT_IN_TRACK` 改 1 |
+| 红外"贴太近"去抖次数（距离保护已关，仅开回来时有用） | `UserFolder/behavior.c` 的 `IR_NEAR_DEBOUNCE`（默认 3）|
+| 重新打开距离保护 / 跟随模式也抑制 | `behavior.c` 的 `BEHAVIOR_IR_INHIBIT` 改 1（+ `BEHAVIOR_NEAR_INHIBIT_IN_TRACK`）|
 | 刺激对情绪的影响力 | `UserFolder/emotion/emotion_manager.c` 的 `emo_stimulus()` 增量表与漂移阈值 |
 | 触摸 I2C 速率 / 阈值 | `src/ICNT8952BN.c` 的 `IIC_BUS_SPEED_FAST`、`SWIPE_THRESHOLD`（默认 30px）|
 

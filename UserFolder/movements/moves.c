@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include "board_config.h"
 #include "drv/common.h"                 /* mdelay */
+#include "drv/tick.h"                   /* csi_tick_get：真实毫秒（节拍补偿用）*/
 #include "servo_test/servo_core.h"      /* servo_core_init / servo_set_pulse / 中位限位 */
 #include "moves.h"
 
@@ -77,43 +78,251 @@ static void tick_hook(void)
     }
 }
 
-/* 把偏移变成绝对脉宽下发（限位由 servo_set_pulse 负责钳制）*/
+/* ==================== 节拍补偿（2026-11：让每步真的只有 20ms）====================
+ *
+ * ★ 为什么需要：插值步里要调 tick_hook()，而状态机的钩子会顺带跑一次
+ *   app_core_step()（触摸 + 串口 + 分片刷屏 2 片，共 6~16ms）。于是"20ms 一步"
+ *   实际变成 26~36ms，且长短随机 —— 观感就是【忽快忽慢、一顿一顿】。
+ *   （慢动作更吃亏：整段比名义时长慢 30~80%，节奏完全不是写的那样。）
+ *
+ * 做法：记下本步开始时刻，钩子跑完后按 csi_tick_get() 的差值把【剩余时间】补上。
+ * 钩子开销 ≤ 20ms 时步长被拉回 20ms；开销更大时无法缩短，只能如实变长。
+ * 注意：这不会改变轨迹形状，只是让"每步 20ms"重新成立（PWM 周期也是 20ms）。 */
+static void wait_rest(uint32_t step_start_ms)
+{
+    uint32_t el = (uint32_t)(csi_tick_get() - step_start_ms);
+
+    if (el < (uint32_t)MOVE_TICK_MS) {
+        mdelay((uint32_t)MOVE_TICK_MS - el);
+    }
+}
+
+/* ==================== 输出限位（留余量 + 超限告警）====================
+ *
+ * ★ 2026-10-31：为什么不是「交给 servo_set_pulse 钳到极限就完事」
+ *
+ *   servo_core.h 的限位是「能到达且不堵转」的边界，但**不是「可以长期停在上面」
+ *   的边界**。动作在强情绪下幅度会被放大：
+ *       偏移 × MOVE_AMP_BASE(1.2) × amp_gain(700~1200，中性还 ×1.15 好奇系数)
+ *   只要算出来的落点越过限位，剩下的几百 ms 里舵机就一直顶在墙上 ——
+ *   嗡响、发热、动作到某处突然不动，也就是"堵转 + 卡顿"。
+ *
+ *   （这不是假设：当天把限位按"手动单点能到哪"收窄到 1440/1320，动作库立刻全顶上，
+ *     最后只能把限位改回去。教训是收限位必须同时收动作幅度。）
+ *
+ *   所以这里主动留 SAFE_MARGIN_US 的余量：动作最多走到差 10us 的位置，
+ *   舵机安静停住，只是幅度比设计值略小（≤1°），而不是顶着机械限位硬耗。
+ *   超限时打一行告警（限流，每 ~1s 最多一条），把"哪个动作超了、超多少"
+ *   直接暴露到串口上，避免靠猜 —— 以后再有人想收限位，先看这行告警。 */
+
+#define SAFE_MARGIN_US      10      /* 距实测极限留的余量（≈1°）*/
+#define CLIP_WARN_EVERY     50U     /* 每 50 次超限（≈1s）打一条，避免刷屏 */
+
+static uint16_t s_clip_cnt = 0U;
+
+/* 把偏移变成绝对脉宽下发。s_yaw_off / s_pitch_off 记的是【未钳制】的逻辑位置，
+ * 这样轨迹规划不受影响；只有真正写给 PWM 的值才被收进安全区。 */
 static void apply_off(int16_t yaw_off, int16_t pitch_off)
 {
+    int32_t y;
+    int32_t p;
+
     s_yaw_off = yaw_off;
     s_pitch_off = pitch_off;
 
-    servo_set_pulse(SERVO_YAW_CH,
-                    (uint32_t)((int32_t)SERVO_YAW_CENTER + (int32_t)yaw_off));
-    servo_set_pulse(SERVO_PITCH_CH,
-                    (uint32_t)((int32_t)SERVO_PITCH_CENTER + (int32_t)pitch_off));
+    y = (int32_t)SERVO_YAW_CENTER + (int32_t)yaw_off;
+    p = (int32_t)SERVO_PITCH_CENTER + (int32_t)pitch_off;
+
+    if ((y > (int32_t)(SERVO_YAW_MAX - SAFE_MARGIN_US)) ||
+        (y < (int32_t)(SERVO_YAW_MIN + SAFE_MARGIN_US)) ||
+        (p > (int32_t)(SERVO_PITCH_MAX - SAFE_MARGIN_US)) ||
+        (p < (int32_t)(SERVO_PITCH_MIN + SAFE_MARGIN_US))) {
+        if ((s_clip_cnt % CLIP_WARN_EVERY) == 0U) {
+            printf("[mv] CLIP: yaw=%d (ok %u~%u)  pitch=%d (ok %u~%u)  off=(%d,%d)\r\n",
+                   (int)y, SERVO_YAW_MIN + SAFE_MARGIN_US, SERVO_YAW_MAX - SAFE_MARGIN_US,
+                   (int)p, SERVO_PITCH_MIN + SAFE_MARGIN_US, SERVO_PITCH_MAX - SAFE_MARGIN_US,
+                   (int)yaw_off, (int)pitch_off);
+        }
+        s_clip_cnt++;
+    }
+
+    if (y > (int32_t)(SERVO_YAW_MAX - SAFE_MARGIN_US)) {
+        y = (int32_t)(SERVO_YAW_MAX - SAFE_MARGIN_US);
+    } else if (y < (int32_t)(SERVO_YAW_MIN + SAFE_MARGIN_US)) {
+        y = (int32_t)(SERVO_YAW_MIN + SAFE_MARGIN_US);
+    }
+
+    if (p > (int32_t)(SERVO_PITCH_MAX - SAFE_MARGIN_US)) {
+        p = (int32_t)(SERVO_PITCH_MAX - SAFE_MARGIN_US);
+    } else if (p < (int32_t)(SERVO_PITCH_MIN + SAFE_MARGIN_US)) {
+        p = (int32_t)(SERVO_PITCH_MIN + SAFE_MARGIN_US);
+    }
+
+    servo_set_pulse(SERVO_YAW_CH, (uint32_t)y);
+    servo_set_pulse(SERVO_PITCH_CH, (uint32_t)p);
 }
 
 /* ==================== 轨迹原语 ==================== */
 
-void move_line(int16_t yaw0, int16_t pitch0, int16_t yaw1, int16_t pitch1, uint16_t ms)
+/* 【2026-10-31】梯形速度剖面：把"归一化时间 t(0~1000)"映射成"归一化位置 s(0~1000)"。
+ *
+ * 为什么要这一步：原来是线性插值 —— 每步位移恒定，等价于整段匀速。
+ * 于是起点那一下速度从 0 阶跃到满速、终点又从满速阶跃回 0，
+ * 舵机表现就是"起步一顿、到点一冲再回弹"。小幅度时看不出来，
+ * 幅度一大（尤其配合 amp_gain 放大）就很明显。
+ *
+ * 梯形剖面：前 R 千分比的时长用来加速、中间匀速、最后 R 减速，两端速度为 0。
+ * 位置 = 速度的积分，所以 s(t) 是分段二次，运算只有乘法。
+ *
+ *   v(t):  0 →(线性)→ 满速 →(保持)→ 满速 →(线性)→ 0
+ *   s(t):  t²/(2R)  /  (R/2 + t-R)  /  1 - (1-t)²/(2R)     （均已归一化）
+ *
+ * 峰值速度 = 平均速度 / (1 - R/1000)，R=200 时是 1.25 倍 —— 限速那边要按这个折算，
+ * 否则同样行程里中段会比原来快 25%，反而更容易跟不上。 */
+/* 【2026-11】缓动剖面（起/停两端可分别开关）
+ *
+ *   in/out 都开 = 原来的梯形（起止速度为 0）—— 单段动作最正确的形状。
+ *   关掉某一端 = 那一端"带着速度"接进/接出。用途：把【多段同向】的轨迹串成
+ *   一条连续弧线（HAPPY 变体③ 的绕圈 8 段就是典型），段与段之间不再减速到 0，
+ *   观感从"一段一段挪"变成"一口气走完"。
+ *
+ * 归一化（刻度 1000×1000）：
+ *     面积 = 1000×1000 − (in ? RAMP×500 : 0) − (out ? RAMP×500 : 0)
+ *     峰值速度 = 1000×1000 / 面积     （in=out=1、RAMP=200 → 1.25，与旧实现一致）
+ *   两端都关时面积 = 1000×1000，即线性匀速，峰值 = 1。 */
+static uint32_t ease_area_total(uint8_t ease_in, uint8_t ease_out)
+{
+    uint32_t total = 1000U * 1000U;
+
+    if (ease_in != 0U) {
+        total -= (uint32_t)MOVE_EASE_RAMP * 500U;
+    }
+    if (ease_out != 0U) {
+        total -= (uint32_t)MOVE_EASE_RAMP * 500U;
+    }
+    return total;
+}
+
+static uint32_t ease_profile_ex(uint32_t t, uint8_t ease_in, uint8_t ease_out)
+{
+    uint32_t r = MOVE_EASE_RAMP;
+    uint32_t total;
+    uint32_t lin_start;     /* 匀速段起点 */
+    uint32_t out_start;     /* 减速段起点 */
+    uint32_t base;          /* 加速段面积 */
+    uint32_t area;
+
+    if (t >= 1000U) {
+        return 1000U;       /* 末步必须精确落在终点 */
+    }
+    if (r == 0U) {
+        return t;           /* 退化成线性 */
+    }
+    if (r >= 1000U) {
+        r = 999U;
+    }
+
+    total     = ease_area_total(ease_in, ease_out);
+    lin_start = (ease_in  != 0U) ? r : 0U;
+    out_start = 1000U - ((ease_out != 0U) ? r : 0U);
+    base      = (ease_in  != 0U) ? ((uint32_t)r * 500U) : 0U;
+
+    if ((ease_in != 0U) && (t <= r)) {                  /* 加速段：t²/(2R) */
+        area = (t * t * 1000U) / (2U * r);
+    } else if (t <= out_start) {                        /* 匀速段 */
+        area = base + (t - lin_start) * 1000U;
+    } else {                                            /* 减速段：1-(1-t)²/(2R) */
+        uint32_t d = 1000U - t;
+
+        area = base + (out_start - lin_start) * 1000U
+             + (((uint32_t)r * 500U) - (d * d * 1000U) / (2U * r));
+    }
+
+    return (area * 1000U) / total;
+}
+
+/* 轨迹单段插值。
+ * ease_in / ease_out = 1 表示该端缓动（速度为 0）；0 表示"带速度接续"。
+ * 只在需要把多段同向轨迹串成一条弧线时才传 0（见 moves.h 的 move_to_ex）。 */
+void move_line_ex(int16_t yaw0, int16_t pitch0, int16_t yaw1, int16_t pitch1,
+                  uint16_t ms, uint8_t ease_in, uint8_t ease_out)
 {
     uint16_t steps = (uint16_t)(ms / MOVE_TICK_MS);
     uint16_t i;
+    int32_t  dy;
+    int32_t  dp;
+    int32_t  dmax;
+    uint32_t t0;
+
+#if MOVE_EASE_MODE == 0
+    ease_in  = 0U;          /* 剖面整个关掉：线性匀速（原来的行为）*/
+    ease_out = 0U;
+#endif
 
     if (steps == 0U) {
         steps = 1U;
     }
 
-    for (i = 1U; i <= steps; i++) {
-        int16_t y = (int16_t)((int32_t)yaw0 +
-                              ((int32_t)yaw1 - (int32_t)yaw0) * (int32_t)i / (int32_t)steps);
-        int16_t p = (int16_t)((int32_t)pitch0 +
-                              ((int32_t)pitch1 - (int32_t)pitch0) * (int32_t)i / (int32_t)steps);
+    /* ★ 2026-10-31 限速：单个 20ms 插值步不许超过 MOVE_MAX_STEP_US。
+     *
+     * 背景：动作时长会被 spd_gain(700~1400) 压缩，幅度会被 amp_gain(700~1200，
+     * 中性再 ×1.15) 放大。两头一夹，angry 甩头最坏能到 ~9.5us/ms，而舵机空载
+     * 也就 6.7us/ms、带载更低 —— 指令跑在舵机前面，舵机全程"追不上"，
+     * 观感就是一顿一顿的卡顿（严重时一直全力堵着转，还以为是堵转）。
+     *
+     * 这里不改动作参数，只在"算出来的步长会超速"时把步数加够（时长同比延长）。
+     * 好处：动作形状完全不变，只是最快的那几个动作变慢到舵机跟得上。
+     * 嫌慢就调大 MOVE_MAX_STEP_US（每 20ms 允许走的 us 数）。 */
+    dy   = (int32_t)yaw1 - (int32_t)yaw0;
+    dp   = (int32_t)pitch1 - (int32_t)pitch0;
+    dy   = (dy < 0) ? -dy : dy;
+    dp   = (dp < 0) ? -dp : dp;
+    dmax = (dy > dp) ? dy : dp;
 
-        apply_off(y, p);
+    /* 剖面中段最快：峰值 = 1000×1000 / 面积。先按峰值折算行程，再和限速比，
+     * 保证"最快的那一小段"也不超速（两端都缓动 + RAMP=200 时峰值 1.25 倍）。 */
+    if (dmax > 0) {
+        dmax = (int32_t)(((uint32_t)dmax * 1000000U) / ease_area_total(ease_in, ease_out));
+    }
+
+    if (dmax > (int32_t)steps * (int32_t)MOVE_MAX_STEP_US) {
+        steps = (uint16_t)((dmax + (int32_t)MOVE_MAX_STEP_US - 1) / (int32_t)MOVE_MAX_STEP_US);
+        if (steps == 0U) {
+            steps = 1U;
+        }
+    }
+
+    for (i = 1U; i <= steps; i++) {
+        int32_t  y;
+        int32_t  p;
+        uint32_t s = ease_profile_ex((uint32_t)i * 1000U / (uint32_t)steps, ease_in, ease_out);
+
+        y = (int32_t)yaw0 + ((int32_t)yaw1 - (int32_t)yaw0) * (int32_t)s / 1000;
+        p = (int32_t)pitch0 + ((int32_t)pitch1 - (int32_t)pitch0) * (int32_t)s / 1000;
+
+        t0 = csi_tick_get();
+        apply_off((int16_t)y, (int16_t)p);
 
         tick_hook();
         if (s_intr != 0) {
             return;
         }
-        mdelay(MOVE_TICK_MS);
+        wait_rest(t0);          /* ★ 把钩子耗掉的时间补回来：每步仍是 20ms */
     }
+}
+
+void move_line(int16_t yaw0, int16_t pitch0, int16_t yaw1, int16_t pitch1, uint16_t ms)
+{
+    move_line_ex(yaw0, pitch0, yaw1, pitch1, ms, 1U, 1U);
+}
+
+void move_to_ex(int16_t yaw_off, int16_t pitch_off, uint16_t ms,
+                uint8_t ease_in, uint8_t ease_out)
+{
+    /* 目标偏移按幅度增益缩放、时间按速度增益缩放（增益 1000 时与原行为一致）*/
+    move_line_ex(s_yaw_off, s_pitch_off,
+                 scale_amp(yaw_off), scale_amp(pitch_off),
+                 scale_ms(ms), ease_in, ease_out);
 }
 
 void move_to(int16_t yaw_off, int16_t pitch_off, uint16_t ms)
@@ -141,10 +350,11 @@ void move_hold(uint16_t ms)
     uint16_t left = ms;
 
     while ((left > 0U) && (s_intr == 0)) {
-        uint16_t d = (left > MOVE_TICK_MS) ? MOVE_TICK_MS : left;
+        uint16_t d    = (left > MOVE_TICK_MS) ? MOVE_TICK_MS : left;
+        uint32_t t0   = csi_tick_get();
 
         tick_hook();            /* hold 期间也要能响应串口/推进心情计时 */
-        mdelay(d);
+        wait_rest(t0);          /* 钩子耗时补掉：停顿长度才是写的那个数 */
         left = (uint16_t)(left - d);
     }
 }
@@ -229,6 +439,7 @@ void move_figure8(int16_t yaw_amp, int16_t pitch_amp, uint16_t ms_per_lap, uint8
             int16_t  y = (int16_t)((int32_t)yaw_amp * (int32_t)sin1000(deg) / 1000);
             int16_t  p = (int16_t)((int32_t)pitch_amp *
                                    (int32_t)sin1000((uint16_t)((uint32_t)deg * 2U)) / 1000);
+            uint32_t t0 = csi_tick_get();
 
             apply_off(y, p);
 
@@ -236,7 +447,7 @@ void move_figure8(int16_t yaw_amp, int16_t pitch_amp, uint16_t ms_per_lap, uint8
             if (s_intr != 0) {
                 return;
             }
-            mdelay(MOVE_TICK_MS);
+            wait_rest(t0);      /* 节拍补偿：曲线才不会被刷屏开销拉成忽快忽慢 */
         }
     }
 

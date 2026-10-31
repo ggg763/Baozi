@@ -2,7 +2,8 @@
  * @file     moves_sleep.c
  * @brief    睡眠（SLEEPING）动作：3 个变体，随机呼出（每个都是多段长链）
  *
- * 触发来源：【心情层】—— PC 的 MoodStateMachine 在超过 30 秒没互动时判定 sleeping。
+ * 触发来源：【心情层】—— 心情状态机在超过 180 秒（3 分钟）没互动时判定 sleeping
+ * （mood_fsm.c；PC 版是 30 秒，本机已放宽）。
  * PC 那边的睡姿是"头回正 + 低头（垂眼）"；本工程落成"垂头 + 呼吸起伏"。
  *
  * 【变体池】3 个变体（moves_play_variant 随机呼出，不与上次相同）：
