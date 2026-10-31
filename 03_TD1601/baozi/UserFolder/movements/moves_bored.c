@@ -2,8 +2,8 @@
  * @file     moves_bored.c
  * @brief    无聊（BORED）动作：3 个变体，随机呼出（每个都是多段长链）
  *
- * 触发来源：【心情层】不是情绪层 —— PC 的 MoodStateMachine 在 20~30 秒没有互动时
- * 判定为 bored（state_machine.py 的 _heartbeat_loop），PC 端此刻的做法是
+ * 触发来源：【心情层】不是情绪层 —— 心情状态机在 60 秒没有互动时判定为 bored
+ * （mood_fsm.c 的降级判断，PC 版是 20~30 秒，本机已放宽），PC 端此刻的做法是
  * "歪头 + 低 LED"。本工程把它落成两条"没事干"的长链：
  *
  *   ① moves_bored_run()     歪头发呆 —— 歪到一侧垂着头、发很久的呆、换边、回正

@@ -62,6 +62,8 @@
 #include "uart_esp.h"
 #include "uart_protocol.h"   /* EMOTION_IDLE .. EMOTION_ANGRY */
 #include "baozi_hooks.h"     /* BAOZI_SetEmotion() */
+#include "net_link.h"        /* 配网命令 QR: / NET:（v2.1）*/
+#include "emotion/emotion_fsm.h" /* emotion_fsm_request_track()：TRACK:ON/OFF */
 
 /* ============================ 引脚与外设 ============================ */
 // PB18 = UART3_RXD（收 ESP32 的 GPIO14）——**实板只引出这一根**，见文件头。
@@ -90,10 +92,14 @@
  *   改成 1 即可复用现有自检手段（此时启动日志会显示 TX=PB19）。 */
 #define ESP_UART_TX_BANNER  0
 
-/* 文本行缓冲。ESP32 发来的最长一行是图片描述（CTRL_TD_TEXT），
- * 这里只留 64 字节 —— 超长就整行丢弃并计数，**绝不截断**后半段当命令执行
- * （截断会造出 "INTENSITY:EMO:SAD" 那种幽灵命令，正是要防的坑）。 */
-#define ESP_LINE_MAX        64
+/* 文本行缓冲。
+ *
+ * 64 -> 160（v2.1）：配网要收一整条二维码内容，最坏情况
+ *     "QR:WIFI:T:WPA;S:" + 32 字节 SSID + ";P:" + 63 字节口令 + ";;"
+ *   = 117 字节。原来 64 字节会把这条行当"超长"整行丢掉，配网永远收不到。
+ * 超长仍然整行丢弃、绝不截断 —— 截断会造出 "INTENSITY:EMO:SAD" 那种幽灵命令。
+ * 代价：两处静态缓冲各 160B（s_line + s_mb_line），对 192KB SRAM 无压力。 */
+#define ESP_LINE_MAX        160
 
 /* ============================ 情绪映射 ============================ */
 // ESP32/PC 侧的状态码把三个量压成 1 个字节：code = (emo_id*8 + intent_id)*3 + intensity_id
@@ -254,6 +260,11 @@ static void esp_apply_line(const char *line)
         return;                        /* 空行（对方补的 \n 造成的）忽略 */
     }
 
+    /* ★ v2.1：配网命令优先（QR: / NET:）。放在情绪命令之前是因为它更长、
+     * 更需要"整行不被误解析"，而且前缀与 EMO:/INTENT:/INTENSITY: 不冲突。 */
+    if (net_link_handle_line(line)) {
+        return;
+    }
     if (strncmp(line, "EMO:", 4) == 0) {
         int8_t td = esp_emo_name_to_td(line + 4);
         if (td >= 0) {
@@ -272,6 +283,30 @@ static void esp_apply_line(const char *line)
     }
     if (strncmp(line, "INTENSITY:", 10) == 0) {
         printf("[ESP] line INTENSITY=%s\r\n", line + 10);
+        return;
+    }
+    /* ★ 红外跟随开关（PC 语音"跟着我 / 别跟了" -> TRACK:ON / TRACK:OFF）。
+     *
+     * 为什么必须在这里接一手：PC 端 pc_baozi/main.py 的 on_track 早就把
+     * TRACK:ON 经 CTRL_TD_TEXT 发出来了，但本文件的文本分发过去只认
+     * EMO:/INTENT:/INTENSITY:/QR:/NET: —— TRACK:ON 落到最下面那句
+     * "原文打印"，于是**板子根本不会进跟随模式**，用户看到的就是
+     * "说跟着我，它一动不动"（日志里只有一行 [ESP] text: TRACK:ON）。
+     *
+     * 这里只排个请求（emotion_fsm_request_track），真正的模式切换由状态机
+     * 下一拍做：moves_interrupt() + track_dual_init() 不能在本函数里直接跑。 */
+    if (strncmp(line, "TRACK:", 6) == 0) {
+        const char *v = line + 6;
+
+        if (strcmp(v, "ON") == 0) {
+            printf("[ESP] line TRACK:ON -> request follow mode\r\n");
+            emotion_fsm_request_track(1);
+        } else if (strcmp(v, "OFF") == 0) {
+            printf("[ESP] line TRACK:OFF -> request follow exit\r\n");
+            emotion_fsm_request_track(0);
+        } else {
+            printf("[ESP] line TRACK unknown: %s\r\n", v);
+        }
         return;
     }
     /* 其余任意行（图片描述等）原样打印，**不当命令执行** */

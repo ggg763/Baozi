@@ -29,7 +29,7 @@
 #include "video.h"
 #include "ui.h"             /* ui_set_bus_callback / ui_flush_busy */
 #include "app_core.h"       /* app_core_init / app_core_step */
-#include "behavior.h"       /* behavior_init：红外近距 + 安全抑制注册 */
+#include "behavior.h"       /* behavior_init：触摸抑制注册 + 触摸互动上报 */
 #include "emotion/emotion_fsm.h"
 #include "servo_test/servo_core.h"   /* servo_bus_event（总线仲裁）*/
 
@@ -52,9 +52,13 @@ extern void emotion_test(void);    /* UserFolder/test/emotion_test.c 情感状�
 extern void ir_test(void);
 extern void track_yaw_test(void);
 extern void track_dual_test(void);
+extern void servo_motion_test(void);/* UserFolder/servo_test/servo_motion_test.c 动作库测试台·串口播 moves 动作 */
 
 /* ===== 入口选择（只改这一个数字）=====
  *   4 = 【正式】合并版：卡片 UI + 触摸 + 参数化脸 + 舵机动作 + 情感状态机
+ *   5 = 【动作库测试台】串口直接播放 moves 里的动作（p<id> / d 演示 / g 调增益）
+ *       只初始化舵机 + 动作库 + console，屏幕、触摸、UI 都不初始化，
+ *       走的是和正式固件相同的 moves_* → servo_set_pulse 路径
  *   3 = 纯情感状态机（只跑 emotion_fsm_run，不启用卡片 UI/触摸）
  *       ⚠️ 走这一档必须把 emotion/emotion_fsm.c 的 EMO_FSM_OWN_UART 改回 1，
  *          否则串口命令没人收（它已把 UART0 让给 uart_hal.c）。
@@ -85,7 +89,8 @@ static void app_run(void)
         printf("[app] emotion + servo ready\r\n");
     }
 
-    /* ④ 红外近距 + 安全抑制：手指在屏上 / 贴太近 → FSM 立刻停手。
+    /* ④ 安全抑制 + 交互上报：手指按在屏上 → FSM 立刻停手；任何触摸都刷新
+     *    3 分钟睡眠计时。（红外"贴太近"的距离保护已按用户要求关闭。）
      *    必须在 emotion_fsm_init() 之后（FSM 内部状态要先就绪）。 */
     behavior_init();
 
@@ -111,7 +116,9 @@ int main(void)
 {
     board_init();
 
-#if TEST_ENTRY == 4
+#if TEST_ENTRY == 5
+    servo_motion_test();     /* 动作库测试台：串口播 moves 动作（只初始化舵机 + 动作库 + console）*/
+#elif TEST_ENTRY == 4
     app_run();
 #elif TEST_ENTRY == 3
     emotion_fsm_run();       /* 纯情感状态机（EMO_FSM_OWN_UART 需为 1）*/

@@ -227,22 +227,25 @@ void moves_happy_v3_run(void)
         return;
     }
 
-    /* ② 顺时针走一圈：8 个方位点，两轴始终同时（几乎）匀速 */
-    move_to((int16_t)HAPPY3_YAW_AMP, 0, HAPPY3_STEP_MS);                  /* 右 */
+    /* ② 顺时针走一圈：8 个方位点。
+     * ★ 2026-11：改成 move_to_ex 的"连续弧线"—— 首段起步缓动、中间段匀速接续、
+     *   末段收尾缓动。原来每段都是 move_to（两端减速到 0），一圈走成了 8 顿；
+     *   现在是一口气抹过去，观感才像"高兴地转了个圈"。 */
+    move_to_ex((int16_t)HAPPY3_YAW_AMP, 0, HAPPY3_STEP_MS, 1U, 0U);                  /* 右 */
     if (moves_interrupted() != 0) { return; }
-    move_to((int16_t)HAPPY3_DIAG_YAW, -(int16_t)HAPPY3_DIAG_PITCH, HAPPY3_STEP_MS); /* 右下 */
+    move_to_ex((int16_t)HAPPY3_DIAG_YAW, -(int16_t)HAPPY3_DIAG_PITCH, HAPPY3_STEP_MS, 0U, 0U); /* 右下 */
     if (moves_interrupted() != 0) { return; }
-    move_to(0, -(int16_t)HAPPY3_PITCH_AMP, HAPPY3_STEP_MS);               /* 下 */
+    move_to_ex(0, -(int16_t)HAPPY3_PITCH_AMP, HAPPY3_STEP_MS, 0U, 0U);               /* 下 */
     if (moves_interrupted() != 0) { return; }
-    move_to(-(int16_t)HAPPY3_DIAG_YAW, -(int16_t)HAPPY3_DIAG_PITCH, HAPPY3_STEP_MS);/* 左下 */
+    move_to_ex(-(int16_t)HAPPY3_DIAG_YAW, -(int16_t)HAPPY3_DIAG_PITCH, HAPPY3_STEP_MS, 0U, 0U);/* 左下 */
     if (moves_interrupted() != 0) { return; }
-    move_to(-(int16_t)HAPPY3_YAW_AMP, 0, HAPPY3_STEP_MS);                 /* 左 */
+    move_to_ex(-(int16_t)HAPPY3_YAW_AMP, 0, HAPPY3_STEP_MS, 0U, 0U);                 /* 左 */
     if (moves_interrupted() != 0) { return; }
-    move_to(-(int16_t)HAPPY3_DIAG_YAW, (int16_t)HAPPY3_DIAG_PITCH, HAPPY3_STEP_MS); /* 左上 */
+    move_to_ex(-(int16_t)HAPPY3_DIAG_YAW, (int16_t)HAPPY3_DIAG_PITCH, HAPPY3_STEP_MS, 0U, 0U); /* 左上 */
     if (moves_interrupted() != 0) { return; }
-    move_to(0, (int16_t)HAPPY3_PITCH_AMP, HAPPY3_STEP_MS);                /* 上 */
+    move_to_ex(0, (int16_t)HAPPY3_PITCH_AMP, HAPPY3_STEP_MS, 0U, 0U);                /* 上 */
     if (moves_interrupted() != 0) { return; }
-    move_to((int16_t)HAPPY3_DIAG_YAW, (int16_t)HAPPY3_DIAG_PITCH, HAPPY3_STEP_MS);  /* 右上 */
+    move_to_ex((int16_t)HAPPY3_DIAG_YAW, (int16_t)HAPPY3_DIAG_PITCH, HAPPY3_STEP_MS, 0U, 1U);  /* 右上 */
     if (moves_interrupted() != 0) { return; }
 
     /* ③ 停一下（像转完圈"耶"了一下）*/

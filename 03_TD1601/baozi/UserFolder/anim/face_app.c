@@ -604,3 +604,93 @@ void face_app_tick(uint32_t dt_ms)
         }
     }
 }
+
+/* ---------------------------------------------------------------- 命中查询 */
+/* 视觉像素 (x,y) 是否落在【当前这一帧画出来的东西】上。
+ *
+ * 谁用：ui_app.c 的脸部手势区域划分 —— 用户定义"眼睛两圆心连线 l1 以下、
+ * 未绘制的区域是脸颊"，所以必须知道"哪里画了东西"。
+ *
+ * 为什么不用包围盒（第一版就是，实测偏大太多）：
+ *   眼睛是圆的，包围盒是方的。480 屏上两个 φ310 的圆，四角多占约
+ *   1 万像素；shy（圆角方眼 + 3 道斜纹腮红）更是多占 2.6 万像素。
+ *   这些区域既不算脸颊也不算额头 —— 用户点在眼睛旁边的空白处会觉得
+ *   "没反应"。所以这里按图元形状算：
+ *     · 椭圆/超椭圆类：归一化二次型 (dx/rx)² + (dy/ry)² <= 1
+ *       （n≠2 的超椭圆会略小于实际，但那只是圆角方，误差在几像素内）
+ *     · 胶囊：点到线段的距离 <= rx
+ *     · 心/星/环：用外接椭圆近似（环的内部也算"画了"，宁可判大）
+ *
+ * 坐标：入参是视觉像素 0..479；部件内部是 1/2px、相对屏幕中心。 */
+static int ell_hit(int32_t dx, int32_t dy, int32_t rx, int32_t ry)
+{
+    int32_t ux, uy;
+
+    if ((rx <= 0) || (ry <= 0)) {
+        return 0;
+    }
+    /* Q8 归一化再平方：dx 最大 960，*256 = 245k，平方 6e10 会溢出，
+     * 但 /rx 之后 (dx/rx) 不会超过几个数量级，安全。 */
+    ux = (dx * 256) / rx;
+    uy = (dy * 256) / ry;
+    return ((ux * ux + uy * uy) <= (256 * 256)) ? 1 : 0;
+}
+
+static int one_part_hit(const fd_part_t *p, int32_t px, int32_t py)
+{
+    int32_t dx = px - p->x;
+    int32_t dy = py - p->y;
+
+    switch (p->kind) {
+    case FD_CAP: {                  /* 点到线段的最短距离 <= 半径 */
+        int32_t vx = (int32_t)p->a - p->x;
+        int32_t vy = (int32_t)p->b - p->y;
+        int32_t wx = px - p->x;
+        int32_t wy = py - p->y;
+        int32_t len2 = vx * vx + vy * vy;
+        int32_t t = 0;              /* 0..256 表示投影位置 */
+        int32_t qx, qy;
+
+        if (len2 > 0) {
+            t = ((wx * vx + wy * vy) * 256) / len2;
+            if (t < 0) {
+                t = 0;
+            } else if (t > 256) {
+                t = 256;
+            }
+        }
+        qx = (int32_t)p->x + (vx * t) / 256;
+        qy = (int32_t)p->y + (vy * t) / 256;
+        dx = px - qx;
+        dy = py - qy;
+        return ((dx * dx + dy * dy) <= (int32_t)p->rx * (int32_t)p->rx) ? 1 : 0;
+    }
+    case FD_HEART:                  /* rx/ry 是全宽/全高 */
+        return ell_hit(dx, dy, (int32_t)p->rx / 2, (int32_t)p->ry / 2);
+    default:                        /* SUP / CUT / CRES / DISC / RING / STAR */
+        return ell_hit(dx, dy, (int32_t)p->rx, (int32_t)p->ry);
+    }
+}
+
+int face_app_hit_test(int x, int y)
+{
+    int32_t px = ((int32_t)x - 240) * 2;
+    int32_t py = ((int32_t)y - 240) * 2;
+    int i;
+
+    for (i = 0; i < g_cur_n; i++) {
+        const fd_part_t *p = &g_cur_parts[i];
+
+        if (p->alpha < 24) {
+            continue;               /* 淡出中的部件不算绘制区 */
+        }
+        if (one_part_hit(p, px, py)) {
+            return 1;
+        }
+        /* mirror=1：以屏幕中线再画一份，镜像侧同样算绘制区 */
+        if ((p->mirror != 0) && one_part_hit(p, -px, py)) {
+            return 1;
+        }
+    }
+    return 0;
+}

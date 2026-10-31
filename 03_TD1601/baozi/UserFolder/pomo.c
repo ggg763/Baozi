@@ -22,6 +22,23 @@
 
 /* 回卡片层：ui_app.c 提供（重绘指定卡片页，page=1 会转回 MODE 页）*/
 extern void ui_cards_show(int page);
+/* 卡片页公共骨架（背景 / 顶部时钟 / 页码圆点 / 关闭按钮 / 卡片框）。
+ * MODE 页就是卡片层的第 2 页，必须跟其余四页共用同一套骨架 —— 以前这里
+ * 自己画 3 个圆点、不画时钟、不画卡片框，整页像另一个 App。 */
+extern void ui_cards_chrome(int page);
+/* 只要顶栏（时钟 + 六个页码圆点，不画关闭按钮、不画卡片框）。
+ * 深层子页用它：内容是整屏铺开的，套不进卡片框，但页码必须是同一套 6 个。*/
+extern void ui_cards_header(int page, int with_close);
+
+/* 深层子页的统一开场：清屏 + 背景渐变 + 第 2 页顶栏。
+ * 之前每个 render_xxx 各写一遍，且其中两个还在用旧的 3 圆点 page_dots()，
+ * 于是同一个番茄钟流程里出现了两种页码样式。 */
+static void page_begin(void)
+{
+    ui_clear();
+    ui_set_bg_gradient(C_BG_TOP, C_BG_MID, C_BG_BOT);
+    ui_cards_header(1, 0);
+}
 
 typedef enum {
     PS_OFF = 0,
@@ -56,37 +73,43 @@ static uint32_t ms_acc = 0;             /* 毫秒累积 */
 
 /* ---------------- 布局常量 ---------------- */
 /* 番茄钟 10 圆圈：两行各 5。
- * 行距 = 168px（圆直径 56 + 厚度 3），上下各留 22px 呼吸，
- * 避免后画的厚度层压到上一行的圆（曾被误认为"数字消失"）。 */
+ * 起点从 186 下移到 204：顶栏加了时钟（24~72）与页码圆点（86~99）之后，
+ * 标题落在 100、副标题落在 140（字节底 161），第一行圆再从 186 起只剩 21px，
+ * 现在留 15px，两行间距 128。 */
 #define CIRC_R      28
 #define CIRC_T      4
 static const int circ_x[5] = { 96, 168, 240, 312, 384 };
-static const int circ_y[2] = { 186, 324 };
+static const int circ_y[2] = { 204, 332 };
 #define CIRC_SHAD_DY  3      /* 圆点厚度层下移量 */
 
-/* MODE 三入口按钮 {x,y,w,h} */
+/* MODE 三入口按钮 {x,y,w,h}
+ * 卡片框是 (60,122,360,290)，即 y 122..412。三个 70 高的按钮正好占 210，
+ * 余下 80 均分四段（上 / 间 / 间 / 下 = 20），所以起点是 142 / 232 / 322。
+ * 改版前是 120/220/320，第一个按钮的顶边压出卡片框 2px。 */
 static const int mode_btn[3][4] = {
-    { 90, 120, 300, 70 },
-    { 90, 220, 300, 70 },
-    { 90, 320, 300, 70 }
+    { 90, 142, 300, 70 },
+    { 90, 232, 300, 70 },
+    { 90, 322, 300, 70 }
 };
 /* 通用 EXIT / START（设置页底部）*/
 static const int exit_btn[4]  = { 70, 385, 130, 60 };
 static const int start_btn[4] = { 280, 385, 130, 60 };
 /* 番茄钟运行：GIVE UP（居中）*/
 static const int giveup_btn[4] = { 160, 385, 160, 60 };
-/* 正计时：左上角 EXIT + START/PAUSE + RESET */
-static const int up_exit_btn[4] = { 16, 16, 90, 44 };
-static const int up_go_btn[4]   = { 90, 385, 140, 60 };
-static const int up_rst_btn[4]  = { 250, 385, 140, 60 };
+/* 正计时：底部一行 EXIT / START(PAUSE) / RESET。
+ * EXIT 原来在左上角 (16,16)，顶栏加了时钟后就撞上了，挪到底部更好点。 */
+static const int up_exit_btn[4] = { 16, 385, 120, 60 };
+static const int up_go_btn[4]   = { 156, 385, 148, 60 };
+static const int up_rst_btn[4]  = { 316, 385, 120, 60 };
 /* 倒计时设置：时/分/秒 三列 + / -（列中心 120/240/360）
- * 上排 + 底边 200，大数字占 202..274，下排 - 顶边 286，互不重叠。 */
-static const int cs_h_up[4] = { 80, 144, 80, 56 };
-static const int cs_h_dn[4] = { 80, 286, 80, 56 };
-static const int cs_m_up[4] = { 200, 144, 80, 56 };
-static const int cs_m_dn[4] = { 200, 286, 80, 56 };
-static const int cs_s_up[4] = { 320, 144, 80, 56 };
-static const int cs_s_dn[4] = { 320, 286, 80, 56 };
+ * 顶栏占掉 24~98 之后整体下移 16：上排 + 顶边 160，
+ * 大数字占 218..290，下排 - 顶边 302，互不重叠。 */
+static const int cs_h_up[4] = { 80, 160, 80, 56 };
+static const int cs_h_dn[4] = { 80, 302, 80, 56 };
+static const int cs_m_up[4] = { 200, 160, 80, 56 };
+static const int cs_m_dn[4] = { 200, 302, 80, 56 };
+static const int cs_s_up[4] = { 320, 160, 80, 56 };
+static const int cs_s_dn[4] = { 320, 302, 80, 56 };
 /* 倒计时运行：PAUSE/RESUME + GIVE UP */
 static const int cd_pause_btn[4]  = { 80, 385, 150, 60 };
 static const int cd_giveup_btn[4] = { 250, 385, 150, 60 };
@@ -147,36 +170,9 @@ static void btn_icon(const int b[4], const char *label, int scale, uint16_t dot)
                 label, scale, C_TITLE);
 }
 
-/* 页码圆点（三个小圆，第 x 个点亮）*/
-static void page_dots(int x)
-{
-    int i;
-    int cy = 42;
-    int cx0 = 240 - 22;
-    for (i = 0; i < 3; i++) {
-        ui_add_circle((int16_t)(cx0 + i * 22), (int16_t)cy, 5, 5, 1,
-                      (i + 1 == x) ? C_DOT_ON : C_DOT_OFF);
-    }
-}
-
 static int pt_in(int x, int y, const int b[4])
 {
     return (x >= b[0] && x <= b[0] + b[2] && y >= b[1] && y <= b[1] + b[3]);
-}
-
-/* 顶部时间大字（拟物风：卡片页顶部 时:分）*/
-static void top_time(int hh, int mm, int y, int scale)
-{
-    static char buf[6];
-    int w;
-    buf[0] = (char)('0' + (hh / 10) % 10);
-    buf[1] = (char)('0' + hh % 10);
-    buf[2] = ':';
-    buf[3] = (char)('0' + (mm / 10) % 10);
-    buf[4] = (char)('0' + mm % 10);
-    buf[5] = 0;
-    w = ui_text_width(buf, scale);
-    ui_add_text((int16_t)((480 - w) / 2), (int16_t)y, buf, scale, C_TITLE);
 }
 
 /* 大数字 + 可选环形进度（拟物风）。sec=剩余秒，total=总秒（0=不画进度环）
@@ -203,9 +199,10 @@ static void big_clock_ring(int sec, int total, int cy, int scale)
         ui_add_circle(240, (int16_t)cy, 66, 8, 0, C_TRACK);      /* 底槽 */
         ui_add_arc(240, (int16_t)cy, 66, 8, sweep, C_HILITE);    /* 进度弧 */
     }
-    w = ui_text_width(buf, scale);
-    ui_add_text((int16_t)((480 - w) / 2), (int16_t)(cy - 12 * scale),
-                buf, scale, UI_COL_TEXT);
+    /* v2.2：圆角数码。23 是旧点阵的半高（24*scale/2），用来保持纵向居中不变。 */
+    w = ui_clock_width(buf, (int16_t)(24 * scale));
+    ui_add_clock((int16_t)((480 - w) / 2), (int16_t)(cy - 12 * scale),
+                 buf, (int16_t)(24 * scale), UI_COL_TEXT);
 }
 
 /* 大数字 MM:SS（秒数），scale 5，纯文字无圆环。buf 必须 static。*/
@@ -234,8 +231,9 @@ static void big_clock_hms(int sec)
     buf[6] = (char)('0' + s / 10);
     buf[7] = (char)('0' + s % 10);
     buf[8] = 0;
-    w = ui_text_width(buf, 4);
-    ui_add_text((int16_t)((480 - w) / 2), 216, buf, 4, UI_COL_TEXT);
+    /* v2.2：圆角数码，h = 96（原 scale 4 × 24）。8 个字符 + 两个冒号 */
+    w = ui_clock_width(buf, 96);
+    ui_add_clock((int16_t)((480 - w) / 2), 216, buf, 96, UI_COL_TEXT);
 }
 
 /* 两位数字字符串（时/分/秒显示）*/
@@ -249,13 +247,13 @@ static void two_digit(char out[3], int v)
 /* ---------------- 各页渲染（拟物可爱风）---------------- */
 static void render_mode(void)
 {
-    ui_clear();
-    ui_set_bg_gradient(C_BG_TOP, C_BG_MID, C_BG_BOT);
-    page_dots(2);
+    ui_cards_chrome(1);                 /* 第 2 页 = 索引 1，与其余四页同骨架 */
     btn_icon(mode_btn[0], "POMODORO",  2, C_ICON_RED);
     btn_icon(mode_btn[1], "COUNT UP",  2, C_ICON_GRN);
     btn_icon(mode_btn[2], "COUNTDOWN", 2, C_ICON_BLU);
-    ui_flush(UI_COL_BG);
+    /* 分片刷，与 ui_cards_show 的其余页一致：同步 ui_flush() 会一次卡
+     * 100~200ms，这期间触摸 IRQ 只能置标志，点了像没反应。 */
+    ui_flush_begin(UI_COL_BG);
 }
 
 static void render_pset(void)
@@ -263,15 +261,15 @@ static void render_pset(void)
     const char *title = "POMODORO";
     int i, w;
 
-    ui_clear();
-    ui_set_bg_gradient(C_BG_TOP, C_BG_MID, C_BG_BOT);
-    page_dots(2);
+    page_begin();                       /* 顶栏与其余卡片页一致：时钟 + 6 个圆点 */
 
+    /* 标题下移到 y=100：顶栏的页码圆点在 y=92（占 86~98），
+     * 原来放在 76 会正好压在圆点上。 */
     w = ui_text_width(title, 2);
-    ui_add_text((int16_t)((480 - w) / 2), 76, title, 2, C_TITLE);
+    ui_add_text((int16_t)((480 - w) / 2), 100, title, 2, C_TITLE);
 
     w = ui_text_width("HOW MANY?", 1);
-    ui_add_text((int16_t)((480 - w) / 2), 116, "HOW MANY?", 1, UI_COL_SUB);
+    ui_add_text((int16_t)((480 - w) / 2), 140, "HOW MANY?", 1, UI_COL_SUB);
 
     for (i = 0; i < 10; i++) {
         int row = i / 5;
@@ -322,10 +320,9 @@ static void render_timer(const char *label)
     char round[5];
     int w;
 
-    ui_clear();
-    ui_set_bg_gradient(C_BG_TOP, C_BG_MID, C_BG_BOT);
+    page_begin();
 
-    /* 顶部状态标签 + 轮数 */
+    /* 顶部状态标签 + 轮数（y=108：让开顶栏的页码圆点，那排在 86~99）*/
     if (st == PS_RUN || st == PS_REST) {
         round[0] = (char)('0' + ((done_rounds + 1 > total_rounds)
                                      ? total_rounds : done_rounds + 1));
@@ -346,11 +343,11 @@ static void render_timer(const char *label)
             head[n++] = round[2];
             head[n] = 0;
             w = ui_text_width(head, 1);
-            ui_add_text((int16_t)((480 - w) / 2), 36, head, 1, UI_COL_SUB);
+            ui_add_text((int16_t)((480 - w) / 2), 108, head, 1, UI_COL_SUB);
         }
     } else {
         w = ui_text_width(label, 1);
-        ui_add_text((int16_t)((480 - w) / 2), 36, label, 1, UI_COL_SUB);
+        ui_add_text((int16_t)((480 - w) / 2), 108, label, 1, UI_COL_SUB);
     }
 
     /* 大数字（纯文字，无进度环）*/
@@ -371,20 +368,21 @@ static void render_timer(const char *label)
     ui_flush(UI_COL_BG);
 }
 
-/* 正计时：大数字 + 左上角 EXIT + START/PAUSE + RESET */
+/* 正计时：大数字 + 底部 EXIT / START。 */
 static void render_up(void)
 {
     int w;
     const char *label = "COUNT UP";
 
-    ui_clear();
-    ui_set_bg_gradient(C_BG_TOP, C_BG_MID, C_BG_BOT);
+    page_begin();
 
     w = ui_text_width(label, 1);
-    ui_add_text((int16_t)((480 - w) / 2), 36, label, 1, UI_COL_SUB);
+    ui_add_text((int16_t)((480 - w) / 2), 108, label, 1, UI_COL_SUB);
 
     big_clock(elapsed_sec);
 
+    /* EXIT 从左上角挪到底部一行：左上角现在是顶栏时钟的地盘，
+     * 三个按钮并排反而更好点（与番茄钟设置页的 EXIT / START 同款位置）。 */
     btn(up_exit_btn, "EXIT", 1);
     btn_primary(up_go_btn, up_running ? "PAUSE" : "START", 1);
     btn(up_rst_btn, "RESET", 1);
@@ -397,41 +395,38 @@ static void render_cdset(void)
     const char *title = "COUNTDOWN";
     int w;
 
-    ui_clear();
-    ui_set_bg_gradient(C_BG_TOP, C_BG_MID, C_BG_BOT);
-    page_dots(2);
+    page_begin();
 
+    /* 只留标题：顶栏加了时钟之后，160 起就是 +/- 那一行，
+     * 再塞一行 "SET TIME" 会和 + 号圆按钮贴到一起。 */
     w = ui_text_width(title, 2);
-    ui_add_text((int16_t)((480 - w) / 2), 76, title, 2, C_TITLE);
-
-    w = ui_text_width("SET TIME", 1);
-    ui_add_text((int16_t)((480 - w) / 2), 116, "SET TIME", 1, UI_COL_SUB);
+    ui_add_text((int16_t)((480 - w) / 2), 100, title, 2, C_TITLE);
 
     /* 时列 */
     btn(cs_h_up, "+", 2);
     two_digit(hh_str, cd_hour);
-    w = ui_text_width(hh_str, 3);
-    ui_add_text((int16_t)(120 - w / 2), 202, hh_str, 3, C_TITLE);
+    w = ui_clock_width(hh_str, 72);
+    ui_add_clock((int16_t)(120 - w / 2), 218, hh_str, 72, C_TITLE);
     btn(cs_h_dn, "-", 2);
 
-    w = ui_text_width(":", 3);
-    ui_add_text((int16_t)(180 - w / 2), 202, ":", 3, UI_COL_SUB);
+    w = ui_clock_width(":", 72);
+    ui_add_clock((int16_t)(180 - w / 2), 218, ":", 72, UI_COL_SUB);
 
     /* 分列 */
     btn(cs_m_up, "+", 2);
     two_digit(mm_str, cd_min);
-    w = ui_text_width(mm_str, 3);
-    ui_add_text((int16_t)(240 - w / 2), 202, mm_str, 3, C_TITLE);
+    w = ui_clock_width(mm_str, 72);
+    ui_add_clock((int16_t)(240 - w / 2), 218, mm_str, 72, C_TITLE);
     btn(cs_m_dn, "-", 2);
 
-    w = ui_text_width(":", 3);
-    ui_add_text((int16_t)(300 - w / 2), 202, ":", 3, UI_COL_SUB);
+    w = ui_clock_width(":", 72);
+    ui_add_clock((int16_t)(300 - w / 2), 218, ":", 72, UI_COL_SUB);
 
     /* 秒列 */
     btn(cs_s_up, "+", 2);
     two_digit(ss_str, cd_sec);
-    w = ui_text_width(ss_str, 3);
-    ui_add_text((int16_t)(360 - w / 2), 202, ss_str, 3, C_TITLE);
+    w = ui_clock_width(ss_str, 72);
+    ui_add_clock((int16_t)(360 - w / 2), 218, ss_str, 72, C_TITLE);
     btn(cs_s_dn, "-", 2);
 
     btn(exit_btn, "EXIT", 2);
@@ -444,8 +439,7 @@ static void render_quit(void)
     int w;
     const char *msg = "GIVE UP?";
 
-    ui_clear();
-    ui_set_bg_gradient(C_BG_TOP, C_BG_MID, C_BG_BOT);
+    page_begin();
     w = ui_text_width(msg, 3);
     ui_add_text((int16_t)((480 - w) / 2), 180, msg, 3, C_TITLE);
 
@@ -457,8 +451,7 @@ static void render_quit(void)
 static void render_done(const char *msg)
 {
     int w;
-    ui_clear();
-    ui_set_bg_gradient(C_BG_TOP, C_BG_MID, C_BG_BOT);
+    page_begin();
     w = ui_text_width(msg, 3);
     ui_add_text((int16_t)((480 - w) / 2), 220, msg, 3, C_HILITE);
     ui_flush(UI_COL_BG);

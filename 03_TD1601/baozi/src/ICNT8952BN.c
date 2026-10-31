@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 #include <csi_core.h>
 #include <drv/tick.h>
 #include <drv/gpio.h>
@@ -52,6 +53,18 @@ typedef struct {
     uint8_t reserve;
 } __attribute__((packed)) TouchData_icnt;
 
+// ==================== 双触点报文 ====================
+/* 芯片报文格式：2 字节头（gesture + Point_num）+ 每点 8 字节
+ * （Point_ID / XL / XH / YL / YH / pressure / Event_ID / reserve）。
+ * 原来一次只读 10 字节 = 只拿到第一个点，于是上层永远不知道"还有第二根手指"，
+ * 做不出双指同按。这里改读 18 字节，第二个点跟在后面。
+ *
+ * 兼容：万一面板/芯片固件只上报单点，Point_num 恒为 1，下面按 Point_num
+ * 取值，缓存里永远只有 1 个点 —— 上层会自动退化成"单指长按"，不会卡死。 */
+#define TP_MAX_POINTS   2
+#define TP_PT_BYTES     8
+#define TP_FRAME_BYTES  (2 + TP_PT_BYTES * TP_MAX_POINTS)
+
 // ==================== 手势类型枚举 ====================
 typedef enum {
     GESTURE_NONE        = 0,
@@ -93,6 +106,28 @@ int tp_is_down(void)
 uint32_t tp_last_touch_ms(void)
 {
     return tp_last_active_ms;
+}
+
+/* ---- 触点缓存（最近一帧读到的所有触点）----
+ * 只在这里被 tp_get_gesture() 更新：I2C 读数被人为限制成"每次 IRQ 读一帧"，
+ * 上层反复调 tp_get_points() 拿到的都是同一帧，不会多占 I2C 带宽。
+ * 手指静止时芯片仍会持续上报（否则 GESTURE_MOVE 做不出抚摸），
+ * 所以按住期间缓存是活的；抬手那一帧读出来就是 0 个点。 */
+static uint8_t  s_npt = 0;
+static uint16_t s_px[TP_MAX_POINTS];
+static uint16_t s_py[TP_MAX_POINTS];
+
+/* 读最近一帧的触点。返回触点数（0 / 1 / 2），坐标写进 xs/ys（按点位序）。
+ * 只关心"几个手指、各在哪"，手势码仍然由 tp_get_gesture() 给。 */
+int tp_get_points(uint16_t *xs, uint16_t *ys)
+{
+    int i;
+    for (i = 0; i < s_npt; i++)
+    {
+        xs[i] = s_px[i];
+        ys[i] = s_py[i];
+    }
+    return s_npt;
 }
 
 // ==================== I2C 读写接口 ====================
@@ -151,13 +186,25 @@ gesture_t tp_get_gesture(uint16_t *x, uint16_t *y)
     uint32_t t0 = csi_tick_get();       /* 只在调试打印时用，关掉 TP_DEBUG 就不占用 */
 #endif
     TouchData_icnt data;
-    if (tp_iic_read(ICNT8952_GESTURE, (uint8_t *)&data, 10) != 0)
+    uint8_t frame[TP_FRAME_BYTES];
+    if (tp_iic_read(ICNT8952_GESTURE, frame, sizeof(frame)) != 0)
     {
+        /* 18 字节读失败 -> 退回原来的 10 字节单点报文。
+         * 为什么要有这条退路：有的面板固件只吐得出一个点的长度，多读会 NAK。
+         * 不能因为"想拿第二根手指"把整个触摸搞挂 —— 退回单点后手势照常，
+         * 只是双指判定永远不成立，上层会自动走单点降级通道。 */
+        if (tp_iic_read(ICNT8952_GESTURE, frame, sizeof(TouchData_icnt)) != 0)
+        {
 #if TP_DEBUG
-        printf("[ERR] I2C read failed\r\n");
+            printf("[ERR] I2C read failed\r\n");
 #endif
-        return GESTURE_NONE;
+            s_npt = 0;
+            return GESTURE_NONE;
+        }
+        memset(frame + sizeof(TouchData_icnt), 0,
+               sizeof(frame) - sizeof(TouchData_icnt));
     }
+    memcpy(&data, frame, sizeof(data));
 #if TP_DEBUG
     uint32_t t1 = csi_tick_get();
 
@@ -181,10 +228,41 @@ gesture_t tp_get_gesture(uint16_t *x, uint16_t *y)
         tp_last_active_ms = csi_tick_get();   // 手表还按着：喂狗给 tp_idle_check
     }
 
+    /* ---- 触点缓存：每帧刷新一次，供 tp_get_points() 查询 ---- */
+    s_npt = 0;
+    if (currently_pressed)
+    {
+        s_px[0] = cx;
+        s_py[0] = cy;
+        s_npt   = 1;
+
+        /* 第二个点：header 说 Point_num >= 2 才去解析，避免单点面板上
+         * 把后面 8 字节的残值当成一根手指。坐标/压力/事件三项都校验，
+         * 任何一项不合理就退回单点 —— 宁可少认一根手指，不可认错。 */
+        if (data.Point_num >= 2)
+        {
+            const uint8_t *p1 = &frame[2 + TP_PT_BYTES];
+            uint16_t x1 = (uint16_t)(((uint16_t)p1[2] << 8) | p1[1]);
+            uint16_t y1 = (uint16_t)(((uint16_t)p1[4] << 8) | p1[3]);
+
+            if ((p1[5] > 0) && (p1[6] != 4) && (x1 < 480) && (y1 < 480))
+            {
+                s_px[1] = x1;
+                s_py[1] = y1;
+                s_npt   = 2;
+            }
+        }
+    }
+
 #if TP_DEBUG
-    printf("[TP] P=%d X=%d Y=%d prs=%d evt=%d pressed=%d\r\n",
+    printf("[TP] P=%d X=%d Y=%d prs=%d evt=%d pressed=%d npt=%d",
            data.Point_num, cx, cy, data.pressure, data.Event_ID,
-           currently_pressed);
+           currently_pressed, s_npt);
+    if (s_npt >= 2)
+    {
+        printf(" p1=(%d,%d)", s_px[1], s_py[1]);
+    }
+    printf("\r\n");
 #endif
 
     // 1. 手指首次按下
@@ -314,6 +392,7 @@ void tp_idle_check(uint32_t now_ms)
     {
         finger_down = false;
         swipe_fired = false;
+        s_npt       = 0;          /* 触点缓存一起作废：否则会留下一帧假的"还按着" */
     }
 }
 

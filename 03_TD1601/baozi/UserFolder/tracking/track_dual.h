@@ -99,6 +99,7 @@ void track_dual_init(void);                  /* 进入：引脚 + 舵机初始�
 void track_dual_step(void);                  /* 推进一次（采样/去抖/按节拍步进/打印） */
 void track_dual_exit(void);                  /* 退出：两轴回中位 + 复位内部状态 */
 uint32_t track_dual_lost_ms(void);           /* 当前"无目标"持续时长（ms），供状态机判断自动退出 */
+uint8_t  track_dual_ready(void);             /* 1 = init 全部走完（0 = 跟随循环不会跑）*/
 
 /* 自测入口：init + 死循环 step（main.c 目前调的仍是它；状态机接入后改调上面三件套） */
 void track_dual_test(void);

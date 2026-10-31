@@ -65,6 +65,18 @@ emo_state_t emo_state(void);
 /* 恢复默认（neutral + 500/500/500，= PC 的 EmotionManager.reset()）*/
 void emo_reset(void);
 
+/* 直接设定情绪 + 连续状态（脸部手势专用：脸颊滑动 / 额头连点）。
+ *
+ * 与 emo_apply 的区别：emo_apply 用查表标准值（angry 固定 200/900/300），
+ * 语义是"切到该情绪的标准状态"；本函数允许调用方指定强度，于是
+ * "30 秒内重复触发 -> 越来越强"才能落到具体数值上：
+ *   angry    energy 550~779 -> angry_low（半怒）；>=780 -> angry_high（怒眼）
+ *   loving   energy 越高 -> 舵机动作幅度/节奏越大（表情只有 loving/shy 两档）
+ * 三个分量都会被 clamp 到 0..EMO_SCALE。
+ *
+ * 只给"用户明确的手势"用；PC 下发的 EMO:xxx 仍走 emo_apply。 */
+void emo_force(emo_id_t e, int16_t happiness, int16_t energy, int16_t curiosity);
+
 /* ==================== 对外刺激（v2.0 · 合并版新增）====================
  *
  * 设计约定（用户 2026-11 明确要求）：UI 操作与抚摸**不能直接改情绪**，

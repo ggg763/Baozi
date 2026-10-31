@@ -66,6 +66,7 @@ source_file:
   - UserFolder/test.c
   - UserFolder/servo_test/servo_core.c
   - UserFolder/servo_test/servo_range_test.c
+  - UserFolder/servo_test/servo_motion_test.c
   - UserFolder/servo_test/servo_mvp_test.c
   - UserFolder/servo_test/servo_dual_test.c
   - UserFolder/movements/moves.c
@@ -112,9 +113,15 @@ source_file:
   - UserFolder/anim/face_ui_card.c
   - UserFolder/anim/face_app.c
   - UserFolder/ui.c
+  - UserFolder/voice_link.c
   - UserFolder/ui_app.c
   - UserFolder/pomo.c
   - UserFolder/app_core.c
+  # --- v2.1 配网：二维码 + NET 卡片页（2026-10-28）
+  #     qrgen.c 是纯计算的 QR 编码器（可在 PC 上用 _probe/qr/qr_verify.py 验证），
+  #     net_card.c 负责状态与绘制。两者都不碰外设，只在 ui_app 的页面里露脸。
+  - UserFolder/qr/qrgen.c
+  - UserFolder/qr/net_card.c
   # --- 2026-10-28 补登记：这两个文件被 main.c / ui_app.c 直接调用
   #     （behavior_init / play_card_draw / play_card_tap），
   #     但此前只手工写进了 Baozi.mk 的 Objects0 与编译规则，没写进本表。
@@ -123,6 +130,10 @@ source_file:
   #     ⚠️ Baozi.mk 是生成产物，本表才是唯一权威源，别再只改 makefile。
   - UserFolder/behavior.c
   - UserFolder/play_card.c
+  - UserFolder/face_picker.c
+  # --- 一键演示（2026-10-31）：DEMO 页 + 演示编排 + 与 PC 的播报握手。
+  #     同样必须写进本表（Baozi.mk 是 CDK 的生成产物，改了会被重新生成覆盖）。
+  - UserFolder/demo/demo_show.c
   - UserFolder/QSPI_test/video_tetra_test.c
 ## 第五部分：配置信息
 # def_config:                              # 组件的可配置项

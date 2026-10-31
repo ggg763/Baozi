@@ -110,13 +110,25 @@ static int clamp_pulse(uint32_t ch, uint32_t pulse, uint32_t *out)
 /* 把脉宽换算成 compare 并写入（**只写 compare**，不动 load、不关输出）。
  * 方向（与驱动 csi_pwm_out_config 一致）：HIGH 极性下 compare 对应【低电平宽度】
  *     width = period - pulse      →  脉宽变大 ⇒ compare 变小
- * 故：cmp = cmp_ref - (pulse - pulse_ref) × s_cmp_num / s_cmp_den */
+ * 故：cmp = cmp_ref - (pulse - pulse_ref) × s_cmp_num / s_cmp_den
+ *
+ * ★ 2026-10-31 修正：一次读-改-写。
+ *   原实现连调 wj_pwm_counter_write_compare_a_ch / _b_ch，而这两个 ll 函数
+ *   **各自都是「先 &~ 清字段、再 |= 置位」两次写**。于是每改一次脉宽，
+ *   PWMxCMP 这个寄存器会被写 4 次，中间留下两段「该字段 = 0」的瞬态。
+ *   如果计数器恰好在这几十 ns 内做比较，本周期会被判成「已匹配」，
+ *   输出一个宽度错误（甚至反方向）的脉冲 —— 舵机就会抽一下。
+ *   小步长（20us）时这个错误只有 20us，完全看不出来；
+ *   大跳变（几百 us）时错误脉冲可达几百 us 甚至上千 us，表现为卡顿/抖动。
+ *   现在合并成单次读-改-写，A/B 两个字段在同一个 store 里更新，瞬态消失。
+ *   （一帧 60 段 DMA 的总线仲裁仍然有效，见 servo_bus_event。）*/
 static void write_compare(uint32_t ch, uint32_t pulse)
 {
     int     idx = ch_index(ch);
     int32_t delta;
     int32_t cmp;
     wj_pwm_regs_t *base;
+    uint32_t reg;
 
     if (idx < 0) {
         return;
@@ -131,8 +143,11 @@ static void write_compare(uint32_t ch, uint32_t pulse)
     }
 
     base = pwm_base();
-    wj_pwm_counter_write_compare_a_ch(base, ch, (uint32_t)cmp);
-    wj_pwm_counter_write_compare_b_ch(base, ch, (uint32_t)cmp);
+    reg  = *(&base->PWM0CMP + ch);
+    reg &= ~(WJ_PWM_COUNTER_COMP_CH_A_Msk | WJ_PWM_COUNTER_COMP_CH_B_Msk);
+    reg |= ((uint32_t)cmp << WJ_PWM_COUNTER_COMP_CH_A_Pos) |
+           ((uint32_t)cmp << WJ_PWM_COUNTER_COMP_CH_B_Pos);
+    *(&base->PWM0CMP + ch) = reg;
 }
 
 /* 总线仲裁钩子（见 servo_core.h）
@@ -193,6 +208,23 @@ int servo_core_init(void)
     uint32_t cmp_a;
     uint32_t cmp_b;
     int      idx;
+
+    /* ★ 幂等保护（2026-11）：本函数会被调用两次 —— moves_init() 开机一次，
+     *   track_dual_init() 每次进红外跟随再调一次。
+     *   重复跑的危险在第 3 步校准：它把 YAW 的 compare 依次设成
+     *   SERVO_CAL_P_A(1000us) / SERVO_CAL_P_B(19000us)。**上电首次调用时**
+     *   "输出使能还没打开"，所以注释里说舵机看不到这段；但第二次调用时
+     *   csi_pwm_out_start() 早就把输出打开了 —— 19000us 在 20ms 周期里等于
+     *   把舵机驱到一端的死点堵转（电流尖峰，可能把板子拉复位）。
+     *   已经初始化过就只把两路收回中位，不重做 mux/pwm_init/校准。 */
+    if (s_inited != 0U) {
+        (void)servo_set_pulse(SERVO_YAW_CH,   SERVO_YAW_CENTER);
+        (void)servo_set_pulse(SERVO_PITCH_CH, SERVO_PITCH_CENTER);
+        printf("[core] servo already inited -> recenter only "
+               "(yaw=%uus pitch=%uus)\r\n",
+               SERVO_YAW_CENTER, SERVO_PITCH_CENTER);
+        return 0;
+    }
 
     /* 1) 引脚复用（通路定义在 servo_pins.h） */
     csi_pin_set_mux(SERVO_YAW_PORT, SERVO_YAW_PIN, SERVO_YAW_FUNC);
