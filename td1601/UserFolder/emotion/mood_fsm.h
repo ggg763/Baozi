@@ -10,11 +10,15 @@
  *     C   : mood_fsm_tick(now_ms) 由状态机主循环每 10ms 调一次，
  *           内部自己按 MOOD_HEARTBEAT_MS(5s) 累加节拍 —— 判断逻辑与 PC 一致。
  *
- * 时间阈值与 PC 完全一致（PC 代码里写的是 20s / 30s）：
- *     0 ~ 20s      : ACTIVE   （刚互动完，精神好）
- *     20s ~ 30s    : BORED    （等久了，无聊）
- *     > 30s        : SLEEPING （彻底待机）
+ * 时间阈值（★ 2026-11 按用户要求从 PC 的 20s/30s 放宽）：
+ *     0 ~ 60s      : ACTIVE   （刚互动完，精神好）
+ *     60s ~ 180s   : BORED    （等久了，无聊）
+ *     > 180s       : SLEEPING （3 分钟没人理才睡）
  * 起始态是 IDLE（= PC 构造时 current_mood = BaoZiMood.IDLE + 上电待机表情）。
+ *
+ * ⚠️ 时基必须是【真实毫秒】。emotion_fsm.c 用 csi_tick_get()（SysTick）喂 now_ms，
+ *    历史上这里喂的是"主循环每拍自己 +10ms"的虚拟时基，与实际节拍（刷屏/动作
+ *    阻塞播放时一拍 5~20ms 不等）对不上，30s 的阈值在实机上会漂成 20~60s。
  ******************************************************************************/
 #ifndef _MOOD_FSM_H_
 #define _MOOD_FSM_H_
@@ -30,9 +34,9 @@ typedef enum {
     MOOD_MAX
 } mood_id_t;
 
-/* ---- 阈值：与 PC state_machine.py 一致（运行时可临时改，见 set_thresholds）---- */
-#define MOOD_BORED_MS       20000U      /* > 20s 没互动 → 无聊 */
-#define MOOD_SLEEP_MS       30000U      /* > 30s 没互动 → 睡觉 */
+/* ---- 阈值：本机放宽版（PC 是 20s/30s，太短；运行时可临时改，见 set_thresholds）---- */
+#define MOOD_BORED_MS       60000U      /* > 60s 没互动 → 无聊 */
+#define MOOD_SLEEP_MS      180000U      /* > 180s（3min）没互动 → 睡觉 */
 #define MOOD_HEARTBEAT_MS    5000U      /* 心跳节拍（PC 的 time.sleep(5)）*/
 
 const char *mood_name(mood_id_t m);
@@ -60,7 +64,7 @@ mood_id_t mood_fsm_mood(void);
 uint32_t mood_fsm_idle_ms(void);
 
 /* ==================== 阈值运行时调整（给测试用）====================
- * 正式运行时阈值固定为 20s/30s（= PC）；但上机测试不想干等 30 秒，
+ * 正式运行时阈值固定为 60s/180s；但上机测试不想干等 3 分钟，
  * 所以开放一个 setter：mood_fsm_set_thresholds(3000, 6000) 就能在几秒内
  * 看到 ACTIVE → BORED → SLEEPING 的完整降级链路。传 0 表示该档恢复默认。 */
 void     mood_fsm_set_thresholds(uint32_t bored_ms, uint32_t sleep_ms);

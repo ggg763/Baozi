@@ -4,7 +4,7 @@
  *
  * 三件事：
  *   ① 输入：解析 PC 下发的 EMO:xxx / INTENT:xxx（协议见 Baozi_PC/communication.py）
- *   ② 状态：情绪（emotion_manager）+ 心情（mood_fsm，20s 无聊 / 30s 睡觉）
+ *   ② 状态：情绪（emotion_manager）+ 心情（mood_fsm，60s 无聊 / 180s 睡觉）
  *   ③ 输出：把 (心情, 情绪) 映射成动作 + 用连续状态调制动作参数，交给动作库播放
  *
  * ---- 舵机活动算法（本次开发的核心）----
@@ -53,6 +53,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <drv/uart.h>
+#include <drv/tick.h>                       /* csi_tick_get：SysTick，1 tick = 1ms */
 #include "console/sys_console.h"            /* console.uart */
 #include "drv/common.h"                     /* mdelay */
 #include "board_config.h"
@@ -79,7 +80,8 @@ extern sys_console_t console;
 
 /* ==================== 内部状态 ==================== */
 
-static uint32_t   s_now_ms = 0;             /* 软件毫秒时基（步进而非读硬件计数器）*/
+static uint32_t   s_now_ms = 0;             /* 距 init 的【真实】毫秒数（csi_tick_get 换算）*/
+static uint32_t   s_tick_base = 0;          /* init 时的 SysTick 基准（ms）*/
 static move_id_t  s_playing = MOVE_MAX;     /* 当前正在播的动作（MOVE_MAX = 尚未选）*/
 static mood_id_t  s_play_mood = MOOD_MAX;   /* 选动作时的心情（用于探测播放中的降级）*/
 #if EMO_FSM_OWN_UART
@@ -108,9 +110,10 @@ static uint32_t s_face_acc = 0U;                /* 跟随模式下给 face_ui_ti
 
 /* ==================== 外部抑制与请求（v2.0 · 合并版新增）====================
  *
- * 【抑制】用户手在屏幕上、或红外测到人/物贴得很近时，机器人必须立刻停手
- *   （防误触、防夹手）。本层不直接依赖触摸/红外，由 app 层注册一个查询函数：
- *       emotion_fsm_set_inhibit_cb(app_behavior_inhibit);
+ * 【抑制】用户手按在屏幕上时，机器人必须立刻停手（防误触、防夹手）。
+ *   （红外"贴太近"那条距离保护已按用户要求关闭，见 behavior.c。）
+ *   本层不直接依赖触摸，由 app 层注册一个查询函数：
+ *       emotion_fsm_set_inhibit_cb(behavior_inhibit);
  *   返回 1 时：本拍不启动新动作，并 moves_interrupt() 打断正在播的这一段。
  *
  * 【动作请求】卡片 UI 上"摸头 / 点头 / 摇头"这类按钮不自己写舵机，
@@ -119,9 +122,20 @@ static uint32_t s_face_acc = 0U;                /* 跟随模式下给 face_ui_ti
  */
 static int (*s_inhibit_cb)(void) = 0;
 static int8_t  s_req_move = -1;             /* -1 = 无请求 */
+static int8_t  s_req_track = -1;            /* -1 = 无请求，0 = 要退出跟随，1 = 要进跟随 */
 static uint8_t s_inhibited = 0;             /* 上一拍是否处于抑制（用于打印跳变）*/
 
 /* ==================== 小工具 ==================== */
+
+/* 把 s_now_ms 刷成【真实】毫秒（距 init 的 SysTick 差值）。
+ * ★ 以前是"每拍自己 +10ms"的虚拟时基：主循环一拍的实际长度并不固定
+ *   （分片刷屏 6~16ms、空闲 5ms 延时、动作阻塞播放时靠钩子补 20ms），
+ *   于是 30s 的心情阈值在实机上会漂成 20~60s —— 表现为"老是莫名其妙就睡了"。
+ * 用 SysTick 差值后，idle 计时与实际墙钟一致，阈值写多少就是多少。 */
+static void sync_now_ms(void)
+{
+    s_now_ms = (uint32_t)(csi_tick_get() - s_tick_base);
+}
 
 /* 大小写不敏感比较：line 是否以 prefix 开头 */
 static int prefix_eq(const char *line, const char *prefix)
@@ -239,6 +253,13 @@ static void mode_enter_track(void)
 
     track_dual_init();          /* ② 引脚 + 舵机 + 复位内部状态（两轴回中位）*/
 
+    /* ②.5 初始化没走完就别装作进来了：track_dual_step() 会每拍直接 return，
+     *      舵机一步不动、也没有心跳日志 —— 那种"静默失败"最难查。 */
+    if (track_dual_ready() == 0U) {
+        printf("[fsm] TRACK init FAILED (see [TD]/[core] lines above) "
+               "-> follow loop will NOT run\r\n");
+    }
+
     s_mode     = EMO_MODE_TRACK;
     s_step_ms  = TD_SAMPLE_MS;  /* ③ 跟随要 5ms 节拍：track_dual_step 内部按
                                  *    TD_SAMPLE_MS 累加采样/去抖/控制节拍 */
@@ -318,6 +339,45 @@ static void cmd_state(void)
     }
 }
 
+/* 处理一个"显式情绪/心情"名字 —— 这是 EMO:xxx 的值部分，也是
+ * src/baozi_proto_app.c（协议帧 0x01 / ESP32 状态码 / ESP32 文本 EMO:）的入口。
+ *
+ * ★ 为什么要把这段抽成公开函数（2026-11 实机问题）：
+ *   协议/ESP32 链路原来只调 ui_app_force_emotion()，那是**【只画一张脸】**——
+ *   情绪层（emotion_manager / mood_fsm）一点没变。而 emotion_fsm_step() 每拍
+ *   都会用 emo_current_name() 重新同步屏幕（见 ④ 段），于是：
+ *       触摸手势（脸颊滑动 → emo_force(LOVING) / 额头连点 → emo_force(ANGRY)）
+ *       把情绪定在 loving/angry 之后，PC 再发 EMO:HAPPY 只会"闪一下笑脸"，
+ *       下一拍就被拉回 loving/angry —— 用户看到的就是"表情改不动了"。
+ *   统一走本函数后，任何链路下发的情绪都会同时改掉情绪层，屏幕自然跟得住。
+ *
+ * 值域（大小写不敏感）：
+ *   HAPPY/SAD/ANGRY/SURPRISED/LOVING/NEUTRAL -> 情绪（cmd_emotion）
+ *   IDLE / BORED / SLEEPING(=SLEEP/ASLEEP)   -> 心情（cmd_mood）
+ *   其它                                       -> 归一化为 neutral（= PC normalize）*/
+void emotion_fsm_command_emotion(const char *value)
+{
+    if ((value == 0) || (value[0] == '\0')) {
+        return;
+    }
+
+    /* 要它做表情/动作 → 先退出跟随（跟随与动作库互斥，都写舵机）*/
+    mode_exit_track("EMO command");
+
+    if (text_eq(value, "idle")) {
+        cmd_mood(MOOD_IDLE);
+    } else if (text_eq(value, "bored")) {
+        cmd_mood(MOOD_BORED);
+    } else if (text_eq(value, "sleeping") || text_eq(value, "sleep") ||
+               text_eq(value, "asleep")) {
+        /* "asleep" 是屏幕侧的名字（face_model 只有 asleep 这个姿势），
+         * 协议/ESP32 链路可能把 SLEEPY 直接转成它送进来 —— 一并认。 */
+        cmd_mood(MOOD_SLEEPING);
+    } else {
+        cmd_emotion(value);
+    }
+}
+
 /* 处理一整行命令（支持 PC 协议前缀，也支持裸名调试）。
  * 【公开】= 协议解析入口：测试入口把收到的行原样交给它，从而与正式状态机共用同一份解析。 */
 void emotion_fsm_feed_line(const char *line)
@@ -327,20 +387,7 @@ void emotion_fsm_feed_line(const char *line)
     }
 
     if (prefix_eq(line, "EMO:")) {
-        const char *v = line + 4;
-
-        /* 要它做表情/动作 → 先退出跟随（跟随与动作库互斥，都写舵机）*/
-        mode_exit_track("EMO command");
-
-        if (text_eq(v, "idle")) {
-            cmd_mood(MOOD_IDLE);
-        } else if (text_eq(v, "bored")) {
-            cmd_mood(MOOD_BORED);
-        } else if (text_eq(v, "sleeping") || text_eq(v, "sleep")) {
-            cmd_mood(MOOD_SLEEPING);
-        } else {
-            cmd_emotion(v);
-        }
+        emotion_fsm_command_emotion(line + 4);
         return;
     }
 
@@ -537,7 +584,8 @@ uint8_t emotion_fsm_mode(void)
 
 /* ==================== 外部抑制 / 动作请求 / 刺激（v2.0）==================== */
 
-/* 注册"该停手了吗"的查询函数（由 app 层提供：手指在屏上 或 红外近距）。
+/* 注册"该停手了吗"的查询函数（由 app 层提供：手指按在屏上；红外近距那条
+ * 距离保护已按用户要求关闭，见 behavior.c 的 BEHAVIOR_IR_INHIBIT）。
  * 传 0 取消。返回 1 = 立刻停手。 */
 void emotion_fsm_set_inhibit_cb(int (*cb)(void))
 {
@@ -549,14 +597,60 @@ static int inhibited_now(void)
     return (s_inhibit_cb != 0) ? (s_inhibit_cb() ? 1 : 0) : 0;
 }
 
-/* UI 请求播一个动作（下一拍生效，走与后端命令完全相同的播放路径）*/
+/* UI 请求播一个动作（下一拍生效，走与后端命令完全相同的播放路径）
+ *
+ * 日志里带上 mode / inhibit / amp 三个现场值，是因为"按了没反应"有三种完全
+ * 不同的原因，光看 "ui request move=happy" 分不出来：
+ *   mode=TRACK  → 舵机归跟随模式，请求排在队里没人消费（见 step 的 TRACK 分支）
+ *   inhibit=1   → 手指还按在屏上，FSM 整拍早返回，动作起不来
+ *   amp 很低    → 情绪调制把幅度压小了，动了但看着像没动 */
 void emotion_fsm_request_action(uint8_t move_id)
 {
     if ((int)move_id >= (int)MOVE_MAX) {
         return;
     }
     s_req_move = (int8_t)move_id;
-    printf("[fsm] ui request move=%s\r\n", moves_name((move_id_t)move_id));
+    printf("[fsm] ui request move=%s (mode=%s inhibit=%d amp=%u)\r\n",
+           moves_name((move_id_t)move_id),
+           (s_mode == EMO_MODE_TRACK) ? "TRACK" : "FSM",
+           inhibited_now(), (unsigned)moves_amp_gain());
+}
+
+/* 请求切换红外跟随（UI 的 PLAY 页开关；PC 语音那条走串口命令，最终也落到这里）
+ *
+ * 为什么 UI 不直接调 mode_enter_track() / mode_exit_track()：
+ *   这两个函数会 moves_interrupt() + track_dual_init()（含 io/pwm 配置与
+ *   printf），只能在状态机自己那一拍里做 —— UI 是从 app_core_step 的触摸
+ *   分支里进来的，而 app_core_step 还可能被 moves 的 20ms 钩子重入调用。
+ *   所以 UI 只排队，由 emotion_fsm_step() 在下一拍按正式流程切模式，
+ *   与动作请求（s_req_move）完全同一条纪律。 */
+void emotion_fsm_request_track(int on)
+{
+    s_req_track = (on != 0) ? (int8_t)1 : (int8_t)0;
+    printf("[fsm] ui request track=%d (mode=%s inhibit=%d)\r\n",
+           (int)(s_req_track != 0),
+           (s_mode == EMO_MODE_TRACK) ? "TRACK" : "FSM",
+           inhibited_now());
+}
+
+/* 上报一次"人真的动了"的交互（触摸屏上任何操作：点击 / 滑动 / 按住 /
+ * 按卡片按钮 / 脸颊滑动 / 额头连点）。
+ *
+ * 为什么要单独一个接口：心情层只认"最近一次交互时刻"，而触摸路径
+ * （app_core_step → ui_app_handle_gesture）过去只重置了 UI 自己的待机计时
+ * （ui_app 的 g_idle_ms），从没告诉过心情层 —— 于是用户在屏幕上玩了两分钟，
+ * 30s 一到照样被判成"没人理我"直接睡觉。这是"老是进休眠"的主因之一。
+ *
+ * 触摸不改情绪，所以这里只重置心情计时；睡着时被摸则按"唤醒"处理。 */
+void emotion_fsm_note_interaction(void)
+{
+    sync_now_ms();      /* 用当前真实时刻重置 idle（触摸发生在 step 之后）*/
+
+    if (mood_fsm_mood() == MOOD_SLEEPING) {
+        mood_fsm_wake();
+    } else {
+        mood_fsm_touch();
+    }
 }
 
 /* 施加情绪刺激（抚摸 / 夸奖 / 责备 / 玩耍）：**不直接改情绪**，
@@ -566,6 +660,7 @@ void emotion_fsm_stimulus(uint8_t kind, uint8_t amount)
     emo_id_t   e  = emo_stimulus(kind, amount);
     emo_state_t st = emo_state();
 
+    sync_now_ms();                           /* 用当前真实时刻当"交互时刻" */
     mood_fsm_touch();                        /* 有互动：打断无聊/睡眠 */
     printf("[fsm] stimulus kind=%u amount=%u -> emo=%s (h=%d e=%d c=%d)\r\n",
            (unsigned)kind, (unsigned)amount, emo_name(e),
@@ -575,11 +670,13 @@ void emotion_fsm_stimulus(uint8_t kind, uint8_t amount)
 
 /* ==================== 播放期钩子 ==================== */
 
-/* 动作库每 20ms 回调一次：轮询串口 + 推进心情计时；
- * 心情在播放中变化（例如降级到 BORED/SLEEPING）时请求打断当前周期。 */
+/* 动作库每 20ms 回调一次：轮询串口 + 刷新真实时基 + 保活屏幕；
+ * 心情在播放中变化（例如命令把心情改了）时请求打断当前周期。
+ * 注意：心情降级判断只在主循环的 emotion_fsm_step() 里做（这里只刷新时基），
+ * 所以一段阻塞动作播到一半不会被判成"睡着"而中断 —— 降级最多延后一轮动作。 */
 static void fsm_tick_hook(void)
 {
-    s_now_ms += (uint32_t)MOVE_TICK_MS;
+    sync_now_ms();      /* 动作阻塞播放期间也要让 idle 计时跟上真实时间 */
     poll_uart();
 
     /* 屏幕也跟着心跳 —— 关键：动作是【阻塞播放】的（一播 1.5~7 秒），
@@ -587,7 +684,7 @@ static void fsm_tick_hook(void)
      * MOVE_TICK_MS 与 FACE_TICK_MS 同为 20ms，节奏天然一致。 */
     face_ui_tick();
 
-    /* ★ 播放途中一旦被摸到屏幕 / 红外测到贴太近 → 立刻打断本轮动作 */
+    /* ★ 播放途中一旦被摸到屏幕（现在唯一的抑制依据）→ 立刻打断本轮动作 */
     if (inhibited_now()) {
         if (!s_inhibited) {
             s_inhibited = 1;
@@ -597,6 +694,15 @@ static void fsm_tick_hook(void)
     }
 
     if (mood_fsm_mood() != s_play_mood) {
+        moves_interrupt();
+    }
+
+    /* ★ UI 按钮点名的动作必须【立刻】接上。
+     *   动作是阻塞播放的，一轮待机变体 18~23 秒；不在这里打断，用户按了"点头"
+     *   要等当前那轮扫视整个走完才有反应 —— 实机表现就是"按了没反应"。
+     *   （不是靠抑制 gate 兜底：抑制只在手指按下的那 20ms 内有效，且 TRACK
+     *     模式下根本不走播放分支，请求会一直挂在队列里。） */
+    if (s_req_move >= 0) {
         moves_interrupt();
     }
 }
@@ -633,6 +739,11 @@ int emotion_fsm_init(void)
     face_ui_init();
     (void)face_ui_emotion(emo_current_name());
 
+    /* ★ 真实毫秒的 0 点：放在所有初始化之后，开机清屏那几百毫秒不该算进 idle。
+     *   mood_fsm 的 s_last_ms 也是 0，两者对齐后"上电 = 刚有人操作过"。 */
+    s_tick_base = csi_tick_get();
+    s_now_ms = 0;
+
     printf("[fsm] emotion_fsm init ok. type 'help' for commands\r\n");
     return 0;
 }
@@ -642,18 +753,18 @@ void emotion_fsm_step(void)
     mood_id_t mood;
     move_id_t want;
 
-    s_now_ms += (uint32_t)EMO_FSM_TICK_MS;
+    sync_now_ms();      /* 真实毫秒时基（见 sync_now_ms 的注释）*/
 
     /* ① 收命令（非阻塞）—— 命令里会更新情绪/心情，也可能切模式 */
     poll_uart();
 
-    /* ①.5 ★ 抑制 gate：用户手指在屏上、或红外测到人/物贴得极近 → 立刻停手。
-     *   两种模式都生效（跟随模式下同样不该继续转舵机）。
+    /* ①.5 ★ 抑制 gate：用户手指按在屏上 → 立刻停手（距离保护已关闭，只看触摸）。
+     *   两种模式都生效（跟随模式下按屏同样不该继续转舵机）。
      *   本拍直接返回：不启动动作、不推进跟随，把 CPU 让给触摸/屏幕。 */
     if (inhibited_now()) {
         if (!s_inhibited) {
             s_inhibited = 1;
-            printf("[fsm] inhibit ON (touch/near) -> hold\r\n");
+            printf("[fsm] inhibit ON (touch) -> hold\r\n");
         }
         moves_interrupt();
         face_ui_tick();
@@ -664,9 +775,33 @@ void emotion_fsm_step(void)
         printf("[fsm] inhibit OFF -> resume\r\n");
     }
 
-    /* ② 推进心情计时（20s 无聊 / 30s 睡觉，与 PC 一致）—— 两种模式都要走，
+    /* ② 推进心情计时（60s 无聊 / 180s 睡觉）—— 两种模式都要走，
      *    否则跟随几分钟后一退出就会被判成"很久没互动"、直接进无聊/睡眠 */
     mood = mood_fsm_tick(s_now_ms);
+
+    /* ★ 跟随开关（UI 的 PLAY 页按钮 / PC 语音 TRACK:ON 都落到这里排队）：
+     *   必须在下面的 TRACK 分支之前消费 —— 那个分支是直接 return 的，
+     *   晚一拍处理就意味着"点了按钮没反应"。
+     *   同一拍若还挂着动作请求，一并作废：两者语义互斥，否则紧接着那句
+     *   "TRACK 模式 + 有动作请求 → 退出跟随"会立刻把刚进去的模式踢回来。 */
+    if (s_req_track >= 0) {
+        int8_t want_trk = s_req_track;
+
+        s_req_track = -1;
+        s_req_move  = -1;
+        if (want_trk != 0) {
+            mode_enter_track();
+        } else {
+            mode_exit_track("track request");
+        }
+    }
+
+    /* ★ 手动按钮优先级最高：跟随模式下也认。
+     *   不这么写的话，TRACK 模式会在下面的分支里直接 return，UI 请求永远
+     *   排不到队首 —— 用户按"点头"时脖子正在跟着红外转，看着就是彻底没反应。 */
+    if ((s_mode == EMO_MODE_TRACK) && (s_req_move >= 0)) {
+        mode_exit_track("ui request");
+    }
 
     /* ★ MODE_TRACK：舵机交给红外跟随；动作库停手；屏幕照常跑表情 */
     if (s_mode == EMO_MODE_TRACK) {

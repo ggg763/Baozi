@@ -117,6 +117,12 @@ void ui_flush_begin(uint16_t bg);
 int  ui_flush_step(void);      /* 返回 1 = 已刷完；0 = 还有下一片 */
 int  ui_flush_busy(void);      /* 1 = 上一次还没刷完 */
 
+/* 取消未完成的分片刷屏，屏幕立刻交还出去（不再刷剩下的行）。
+ * 卡片层 → 表情态/提醒弹卡的每个切换点都必须调：
+ * 否则剩下的卡片行会继续刷到屏上，且紧接着的 face_render 整屏渲染会在
+ * CS 已拉低、窗口已设置的状态下再发一次指令头 —— 实机就是花屏 + 卡片和脸混着闪。 */
+void ui_flush_abort(void);
+
 /* ★ 总线仲裁回调（与 face_render.h 的 face_set_bus_callback 同语义）。
  *
  * 为什么要它：卡片层刷屏同样是"分段 DMA"，DMA 持续从 SRAM 取数喂 SPI FIFO（走 AHB）。

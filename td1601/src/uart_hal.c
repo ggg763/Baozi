@@ -91,7 +91,13 @@ static uint8_t g_frame_scratch_buf[FRAME_MAX_DATA];
  * 文本行由主循环用 uart_hal_take_line() 取走，再喂 emotion_fsm_feed_line()；
  * 中断里绝不 printf、绝不做重活。
  */
-#define LINE_MAX         64          /* 单行上限（含结束符）*/
+/* ★ 单行上限 64 → 160（2026-11）：配网二维码走的就是这条 UART0 文本行。
+ *   一条典型命令 "QR:WIFI:T:WPA;S:MyHome;P:12345678;;" 就是 35 字节，
+ *   热点名稍长（20 个字符以上）就顶到 63 的天花板；而 line_feed() 对超长行的
+ *   处理是**整行丢弃**（绝不截断后当命令执行），于是配网永远收不到、屏幕上
+ *   只会停在 net_card 的 "waiting for network"。
+ *   取值与 uart_esp.c 的 ESP_LINE_MAX 对齐（UART3 那条路早就是 160）。 */
+#define LINE_MAX         160         /* 单行上限（含结束符）*/
 #define LINE_QUEUE_DEPTH 4
 
 static char             g_lq[LINE_QUEUE_DEPTH][LINE_MAX];

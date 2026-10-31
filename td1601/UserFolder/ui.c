@@ -441,9 +441,11 @@ static const uint8_t k_clk_seg[10] = {
 #define CLK_DIGIT_W(h) ((h) * 52 / 100)
 #define CLK_GAP(h)     ((h) * 11 / 100)
 #define CLK_COLON_W(h) ((h) * 24 / 100)
-/* '1' 只有两条竖笔，占满整格会在左右各留一大块空白（"09:41" 看着像
- * "09:4   1"）。给它一个窄格，并且**宽度计算要用同一个值**，否则居中会偏。 */
-#define CLK_ONE_W(h)   ((h) * 38 / 100)
+/* '1' 只有两条竖笔（b/c 段，都贴格右边），窄格宽 = 笔画厚 + 一点余量。
+ * 曾经用 38% 的固定比例：h=48 时格宽 18、笔画厚 7，竖笔画在格右端后，
+ * 与下一个字符（如 "22:10" 的 '0'）只剩 0px 间隙 —— 1 和 0 粘成一团。
+ * 改成 t+4：竖笔贴窄格右边后，与后字符的间隙正好等于普通字距 gap。 */
+#define CLK_ONE_W(h)   ((h) * 15 / 100 + 4)
 
 static void clock_digit(int16_t x, int16_t y, int16_t w, int16_t h,
                         int16_t t, uint8_t seg, uint16_t color)
@@ -507,14 +509,14 @@ void ui_add_clock(int16_t x, int16_t y, const char *s, int16_t h, uint16_t color
         first = 0;
 
         if (*s == '1') {
-            /* 窄格 + 居中：七段的 1 只有右侧两条竖笔，占满整格会左右各留
-             * 一大块空白，与前后字符脱开。 */
+            /* 窄格：竖笔 b/c 段由 clock_digit 画在 x+w-t（贴格右边）。
+             * 这里不要额外做居中偏移 —— 竖笔本来就在格右边，再居中反而
+             * 把它推到格右端之外，和下一个字符（如 '0'）粘死。 */
             int16_t ow = (int16_t)CLK_ONE_W(h);
             if (ow < t) {
                 ow = t;
             }
-            clock_digit((int16_t)(cx + (ow - t) / 2), y, ow, h, t,
-                        k_clk_seg[1], color);
+            clock_digit(cx, y, ow, h, t, k_clk_seg[1], color);
             cx = (int16_t)(cx + ow);
         } else if (*s >= '0' && *s <= '9') {
             clock_digit(cx, y, w, h, t, k_clk_seg[*s - '0'], color);
@@ -862,6 +864,31 @@ void ui_set_bus_callback(ui_bus_cb_t cb)
 int ui_flush_busy(void)
 {
     return g_flush.active;
+}
+
+/* 取消未完成的分片刷屏（卡片层 → 表情态的每一个切换点都要调）。
+ *
+ * 为什么：卡片页的分片刷屏要 30 轮主循环才画完一屏（每轮 2 片 16 行）。
+ * 用户"点 X 退出 / 双指按眼睛进来又立刻退出 / 15s 自动回落"这些时刻，
+ * 屏上很可能只画了上半屏。此时如果不取消：
+ *   ① 主循环回来继续 ui_flush_step()，把剩下的卡片行画到屏上 —— 用户已经
+ *      "退出"了却看到整屏卡片；
+ *   ② 紧接着 face_render.c 的 render_all() 会再 LCD_Set_Window +
+ *      startWriteMutileData。CS 已被本函数拉低、窗口/帧格式还是卡片那一套，
+ *      两套状态机交错 = 实机白块/色带。
+ * 这两条叠在一起，就是"进出 UI 之后画面闪一下、半张卡片半张脸"的来源。 */
+void ui_flush_abort(void)
+{
+    if (!g_flush.active) {
+        return;
+    }
+    if (g_flush.started) {
+        LCD_endWriteMutileData();    /* 内部会等 SPI 移位真正结束再收 CS */
+    }
+    g_flush.active  = 0;
+    g_flush.started = 0;
+    g_flush.flip    = 0;
+    g_flush.row     = 0;
 }
 
 void ui_flush_begin(uint16_t bg)

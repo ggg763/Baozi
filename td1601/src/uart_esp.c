@@ -38,7 +38,12 @@
 //
 //      本代  baozi_proto_app.c：BAOZI_SetEmotion(emo) 先挡一道 ——
 //            if (emo > EMOTION_ANGRY) return;      /* 0x06 以上**静默丢弃** */
-//        再经 k_emo_name[7] 转成名字交给 ui_app_force_emotion()。
+//        然后**两件事都要做**（2026-11 起）：
+//            ① emotion_fsm_command_emotion(k_emo_state[emo]) —— 改情绪/心情层；
+//            ② ui_app_force_emotion(k_emo_name[emo])        —— 改屏幕（整屏重绘）。
+//        只做 ② 的话，emotion_fsm 每拍会用 emo_current_name() 把屏幕重新同步回去，
+//        ESP32 发来的表情只会"闪一下"（触摸手势用 emo_force 定过的 loving/angry
+//        最明显）。
 //        底表 anim/face_model.c 只有 **7** 个模型：
 //            neutral / happy / sad / angry / surprised / loving / asleep
 //        且**没有独立的 NEUTRAL 编号** —— neutral 就是 0x00(IDLE)。
@@ -63,6 +68,7 @@
 #include "uart_protocol.h"   /* EMOTION_IDLE .. EMOTION_ANGRY */
 #include "baozi_hooks.h"     /* BAOZI_SetEmotion() */
 #include "net_link.h"        /* 配网命令 QR: / NET:（v2.1）*/
+#include "emotion/emotion_fsm.h" /* emotion_fsm_request_track()：TRACK:ON/OFF */
 
 /* ============================ 引脚与外设 ============================ */
 // PB18 = UART3_RXD（收 ESP32 的 GPIO14）——**实板只引出这一根**，见文件头。
@@ -282,6 +288,30 @@ static void esp_apply_line(const char *line)
     }
     if (strncmp(line, "INTENSITY:", 10) == 0) {
         printf("[ESP] line INTENSITY=%s\r\n", line + 10);
+        return;
+    }
+    /* ★ 红外跟随开关（PC 语音"跟着我 / 别跟了" -> TRACK:ON / TRACK:OFF）。
+     *
+     * 为什么必须在这里接一手：PC 端 pc_baozi/main.py 的 on_track 早就把
+     * TRACK:ON 经 CTRL_TD_TEXT 发出来了，但本文件的文本分发过去只认
+     * EMO:/INTENT:/INTENSITY:/QR:/NET: —— TRACK:ON 落到最下面那句
+     * "原文打印"，于是**板子根本不会进跟随模式**，用户看到的就是
+     * "说跟着我，它一动不动"（日志里只有一行 [ESP] text: TRACK:ON）。
+     *
+     * 这里只排个请求（emotion_fsm_request_track），真正的模式切换由状态机
+     * 下一拍做：moves_interrupt() + track_dual_init() 不能在本函数里直接跑。 */
+    if (strncmp(line, "TRACK:", 6) == 0) {
+        const char *v = line + 6;
+
+        if (strcmp(v, "ON") == 0) {
+            printf("[ESP] line TRACK:ON -> request follow mode\r\n");
+            emotion_fsm_request_track(1);
+        } else if (strcmp(v, "OFF") == 0) {
+            printf("[ESP] line TRACK:OFF -> request follow exit\r\n");
+            emotion_fsm_request_track(0);
+        } else {
+            printf("[ESP] line TRACK unknown: %s\r\n", v);
+        }
         return;
     }
     /* 其余任意行（图片描述等）原样打印，**不当命令执行** */

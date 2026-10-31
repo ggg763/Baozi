@@ -318,8 +318,13 @@ void track_dual_init(void)
     csi_pin_mode(PORTB, TD_IR_RIGHT_PIN,  GPIO_MODE_PULLUP);
 
     if (csi_gpio_init(&s_ir_gpio, (uint32_t)TD_IR_GPIO_IDX) != CSI_OK) {
-        printf("[TD] gpio init fail\r\n");
-        return;
+        /* ★ 不再 return（2026-11）：behavior_init() 开机时已经对同一个
+         *   控制器（PORTB，GPIO idx=1）做过 csi_gpio_init，驱动对"重复 init"
+         *   返回什么依实现而定。而前面 mux + 上拉 + 方向都已经配好，读引脚
+         *   照样能用 —— 为了这么一次重复初始化就 return，代价是整个跟随模式
+         *   一步不动（实机表现：进 TRACK 后舵机完全静止，只有一行
+         *   "[TD] gpio init fail"，其它什么都不说）。 */
+        printf("[TD] gpio re-init not ok -> continue (pins already configured)\r\n");
     }
     csi_gpio_dir(&s_ir_gpio, TD_IR_ALL_PIN, GPIO_DIRECTION_INPUT);
 
@@ -523,9 +528,17 @@ void track_dual_exit(void)
  * 当前"无目标"持续时长（ms）—— 只作显示/调试。
  * ⚠️ 退出跟随请用 track_dual_sweep_done()：丢失 5s 会先扫一圈，扫完还没有才退。
  *****************************************************************************/
-uint32_t track_dual_lost_ms(void)
-{
+uint32_t track_dual_lost_ms(void){
     return s_lost_ms;
+}
+
+/* 跟随是否就绪（1 = track_dual_init() 走完了全部初始化）。
+ * 为什么要有它：init 中途任何一步失败都会把 s_inited 留成 0，之后
+ * track_dual_step() 第一行就 return —— 实机表现是"进了追踪模式，舵机一动不动、
+ * 也没有心跳日志"，从外面完全看不出是"没进来跑"。状态机在切模式后查一次即可。 */
+uint8_t track_dual_ready(void)
+{
+    return s_inited;
 }
 
 /*****************************************************************************

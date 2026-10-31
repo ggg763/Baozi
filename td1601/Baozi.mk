@@ -10,7 +10,7 @@ ProjectPath            :=./
 IntermediateDirectory  :=Obj
 OutDir                 :=$(IntermediateDirectory)
 User                   :=GGG
-Date                   :=28/10/2026
+Date                   :=31/10/2026
 CDKPath                :=../../../../../../environment
 ToolchainPath          :=D:/Baozi/CDK/CDKRepo/Toolchain/XTGccElfNewlib/V3.4.0/R/
 LinkerName             :=riscv64-unknown-elf-gcc
@@ -73,12 +73,12 @@ ASFLAGS  :=$(PreprocessorSwitch)USE_CHIP_TD1601 $(PreprocessorSwitch)USE_CONSOLE
 PreprocessFlags  :=$(PreprocessorSwitch)USE_CHIP_TD1601 $(PreprocessorSwitch)USE_CONSOLE $(PreprocessorSwitch)USE_CSI $(PreprocessorSwitch)USE_MINILIBC $(PreprocessorSwitch)USE_MM $(PreprocessorSwitch)USE_TD1601_EVB   -Wno-unused-function -O2 -g -nostdlib -Wpointer-arith -Wall -Wl,-EL -ffunction-sections -fdata-sections -fdata-sections -Os -g  $(PreprocessorSwitch)CONFIG_ARCH_INTERRUPTSTACK=4096 $(PreprocessorSwitch)CONFIG_BENCHMARK=1 $(PreprocessorSwitch)CONFIG_BENCHMARK_COREMARK=1 $(PreprocessorSwitch)CONFIG_BENCHMARK_DHRY=1 $(PreprocessorSwitch)CONFIG_CHIP_TD1601=1 $(PreprocessorSwitch)CONFIG_CPU_E906FD=1 $(PreprocessorSwitch)CONFIG_DEBUG_MODE=1 $(PreprocessorSwitch)CONFIG_KERNEL_NONE=1 $(PreprocessorSwitch)CONFIG_SUPPORT_TSPEND=1 $(PreprocessorSwitch)CONFIG_XIP=1   -mcpu=e906fd   -Os  -g -DANIM_USE_BIN=1 -pipe 
 
 
-Objects0=$(IntermediateDirectory)/QSPI_test_video_tetra_test$(ObjectSuffix) $(IntermediateDirectory)/anim_face_action$(ObjectSuffix) $(IntermediateDirectory)/anim_face_app$(ObjectSuffix) $(IntermediateDirectory)/anim_face_draw$(ObjectSuffix) $(IntermediateDirectory)/anim_face_model$(ObjectSuffix) $(IntermediateDirectory)/anim_face_render$(ObjectSuffix) $(IntermediateDirectory)/anim_face_ui_card$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_app_core$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_behavior$(ObjectSuffix) $(IntermediateDirectory)/emotion_emotion_fsm$(ObjectSuffix) \
-	$(IntermediateDirectory)/emotion_emotion_manager$(ObjectSuffix) $(IntermediateDirectory)/emotion_mood_fsm$(ObjectSuffix) $(IntermediateDirectory)/gfx_gfx$(ObjectSuffix) $(IntermediateDirectory)/gfx_gfx_demo$(ObjectSuffix) $(IntermediateDirectory)/gfx_gfx_sprite_demo$(ObjectSuffix) $(IntermediateDirectory)/movements_moves$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_angry$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_bored$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_demo$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_eight$(ObjectSuffix) \
-	$(IntermediateDirectory)/movements_moves_happy$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_idle$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_loving$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_sad$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_sleep$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_surprised$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_play_card$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_pomo$(ObjectSuffix) $(IntermediateDirectory)/servo_test_servo_core$(ObjectSuffix) $(IntermediateDirectory)/servo_test_servo_dual_test$(ObjectSuffix) \
-	$(IntermediateDirectory)/servo_test_servo_mvp_test$(ObjectSuffix) $(IntermediateDirectory)/servo_test_servo_range_test$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_test$(ObjectSuffix) $(IntermediateDirectory)/test_emotion_test$(ObjectSuffix) $(IntermediateDirectory)/test_ir_state_test$(ObjectSuffix) $(IntermediateDirectory)/test_ir_test$(ObjectSuffix) $(IntermediateDirectory)/test_serial_min_test$(ObjectSuffix) $(IntermediateDirectory)/tracking_track_dual$(ObjectSuffix) $(IntermediateDirectory)/tracking_track_yaw$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_ui$(ObjectSuffix) \
-	$(IntermediateDirectory)/UserFolder_ui_app$(ObjectSuffix) $(IntermediateDirectory)/chip_config$(ObjectSuffix) $(IntermediateDirectory)/src_ICNT8952BN$(ObjectSuffix) $(IntermediateDirectory)/src_baozi_proto_app$(ObjectSuffix) $(IntermediateDirectory)/src_board_init$(ObjectSuffix) $(IntermediateDirectory)/src_habit_store$(ObjectSuffix) $(IntermediateDirectory)/src_main$(ObjectSuffix) $(IntermediateDirectory)/src_sched_store$(ObjectSuffix) $(IntermediateDirectory)/src_uart_esp$(ObjectSuffix) $(IntermediateDirectory)/src_uart_hal$(ObjectSuffix) \
-	$(IntermediateDirectory)/src_uart_protocol$(ObjectSuffix) $(IntermediateDirectory)/src_video$(ObjectSuffix) $(IntermediateDirectory)/src_net_link$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_qr_qrgen$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_qr_net_card$(ObjectSuffix) 
+Objects0=$(IntermediateDirectory)/QSPI_test_video_tetra_test$(ObjectSuffix) $(IntermediateDirectory)/anim_face_action$(ObjectSuffix) $(IntermediateDirectory)/anim_face_app$(ObjectSuffix) $(IntermediateDirectory)/anim_face_draw$(ObjectSuffix) $(IntermediateDirectory)/anim_face_model$(ObjectSuffix) $(IntermediateDirectory)/anim_face_render$(ObjectSuffix) $(IntermediateDirectory)/anim_face_ui_card$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_app_core$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_behavior$(ObjectSuffix) $(IntermediateDirectory)/demo_demo_show$(ObjectSuffix) \
+	$(IntermediateDirectory)/emotion_emotion_fsm$(ObjectSuffix) $(IntermediateDirectory)/emotion_emotion_manager$(ObjectSuffix) $(IntermediateDirectory)/emotion_mood_fsm$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_face_picker$(ObjectSuffix) $(IntermediateDirectory)/gfx_gfx$(ObjectSuffix) $(IntermediateDirectory)/gfx_gfx_demo$(ObjectSuffix) $(IntermediateDirectory)/gfx_gfx_sprite_demo$(ObjectSuffix) $(IntermediateDirectory)/movements_moves$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_angry$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_bored$(ObjectSuffix) \
+	$(IntermediateDirectory)/movements_moves_demo$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_eight$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_happy$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_idle$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_loving$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_sad$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_sleep$(ObjectSuffix) $(IntermediateDirectory)/movements_moves_surprised$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_play_card$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_pomo$(ObjectSuffix) \
+	$(IntermediateDirectory)/qr_net_card$(ObjectSuffix) $(IntermediateDirectory)/qr_qrgen$(ObjectSuffix) $(IntermediateDirectory)/servo_test_servo_core$(ObjectSuffix) $(IntermediateDirectory)/servo_test_servo_dual_test$(ObjectSuffix) $(IntermediateDirectory)/servo_test_servo_motion_test$(ObjectSuffix) $(IntermediateDirectory)/servo_test_servo_mvp_test$(ObjectSuffix) $(IntermediateDirectory)/servo_test_servo_range_test$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_test$(ObjectSuffix) $(IntermediateDirectory)/test_emotion_test$(ObjectSuffix) $(IntermediateDirectory)/test_ir_state_test$(ObjectSuffix) \
+	$(IntermediateDirectory)/test_ir_test$(ObjectSuffix) $(IntermediateDirectory)/test_serial_min_test$(ObjectSuffix) $(IntermediateDirectory)/tracking_track_dual$(ObjectSuffix) $(IntermediateDirectory)/tracking_track_yaw$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_ui$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_ui_app$(ObjectSuffix) $(IntermediateDirectory)/UserFolder_voice_link$(ObjectSuffix) $(IntermediateDirectory)/chip_config$(ObjectSuffix) $(IntermediateDirectory)/src_ICNT8952BN$(ObjectSuffix) $(IntermediateDirectory)/src_baozi_proto_app$(ObjectSuffix) \
+	$(IntermediateDirectory)/src_board_init$(ObjectSuffix) $(IntermediateDirectory)/src_habit_store$(ObjectSuffix) $(IntermediateDirectory)/src_main$(ObjectSuffix) $(IntermediateDirectory)/src_net_link$(ObjectSuffix) $(IntermediateDirectory)/src_sched_store$(ObjectSuffix) $(IntermediateDirectory)/src_uart_esp$(ObjectSuffix) $(IntermediateDirectory)/src_uart_hal$(ObjectSuffix) $(IntermediateDirectory)/src_uart_protocol$(ObjectSuffix) $(IntermediateDirectory)/src_video$(ObjectSuffix) 
 
 
 
@@ -152,6 +152,11 @@ $(IntermediateDirectory)/UserFolder_behavior$(ObjectSuffix): UserFolder/behavior
 Lst/UserFolder_behavior$(PreprocessSuffix): UserFolder/behavior.c
 	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/UserFolder_behavior$(PreprocessSuffix) UserFolder/behavior.c
 
+$(IntermediateDirectory)/demo_demo_show$(ObjectSuffix): UserFolder/demo/demo_show.c  
+	$(CC) $(SourceSwitch) UserFolder/demo/demo_show.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/demo_demo_show$(ObjectSuffix) -MF$(IntermediateDirectory)/demo_demo_show$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/demo_demo_show$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
+Lst/demo_demo_show$(PreprocessSuffix): UserFolder/demo/demo_show.c
+	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/demo_demo_show$(PreprocessSuffix) UserFolder/demo/demo_show.c
+
 $(IntermediateDirectory)/emotion_emotion_fsm$(ObjectSuffix): UserFolder/emotion/emotion_fsm.c  
 	$(CC) $(SourceSwitch) UserFolder/emotion/emotion_fsm.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/emotion_emotion_fsm$(ObjectSuffix) -MF$(IntermediateDirectory)/emotion_emotion_fsm$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/emotion_emotion_fsm$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
 Lst/emotion_emotion_fsm$(PreprocessSuffix): UserFolder/emotion/emotion_fsm.c
@@ -166,6 +171,11 @@ $(IntermediateDirectory)/emotion_mood_fsm$(ObjectSuffix): UserFolder/emotion/moo
 	$(CC) $(SourceSwitch) UserFolder/emotion/mood_fsm.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/emotion_mood_fsm$(ObjectSuffix) -MF$(IntermediateDirectory)/emotion_mood_fsm$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/emotion_mood_fsm$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
 Lst/emotion_mood_fsm$(PreprocessSuffix): UserFolder/emotion/mood_fsm.c
 	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/emotion_mood_fsm$(PreprocessSuffix) UserFolder/emotion/mood_fsm.c
+
+$(IntermediateDirectory)/UserFolder_face_picker$(ObjectSuffix): UserFolder/face_picker.c  
+	$(CC) $(SourceSwitch) UserFolder/face_picker.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/UserFolder_face_picker$(ObjectSuffix) -MF$(IntermediateDirectory)/UserFolder_face_picker$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/UserFolder_face_picker$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
+Lst/UserFolder_face_picker$(PreprocessSuffix): UserFolder/face_picker.c
+	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/UserFolder_face_picker$(PreprocessSuffix) UserFolder/face_picker.c
 
 $(IntermediateDirectory)/gfx_gfx$(ObjectSuffix): UserFolder/gfx/gfx.c  
 	$(CC) $(SourceSwitch) UserFolder/gfx/gfx.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/gfx_gfx$(ObjectSuffix) -MF$(IntermediateDirectory)/gfx_gfx$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/gfx_gfx$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
@@ -247,6 +257,16 @@ $(IntermediateDirectory)/UserFolder_pomo$(ObjectSuffix): UserFolder/pomo.c
 Lst/UserFolder_pomo$(PreprocessSuffix): UserFolder/pomo.c
 	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/UserFolder_pomo$(PreprocessSuffix) UserFolder/pomo.c
 
+$(IntermediateDirectory)/qr_net_card$(ObjectSuffix): UserFolder/qr/net_card.c  
+	$(CC) $(SourceSwitch) UserFolder/qr/net_card.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/qr_net_card$(ObjectSuffix) -MF$(IntermediateDirectory)/qr_net_card$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/qr_net_card$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
+Lst/qr_net_card$(PreprocessSuffix): UserFolder/qr/net_card.c
+	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/qr_net_card$(PreprocessSuffix) UserFolder/qr/net_card.c
+
+$(IntermediateDirectory)/qr_qrgen$(ObjectSuffix): UserFolder/qr/qrgen.c  
+	$(CC) $(SourceSwitch) UserFolder/qr/qrgen.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/qr_qrgen$(ObjectSuffix) -MF$(IntermediateDirectory)/qr_qrgen$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/qr_qrgen$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
+Lst/qr_qrgen$(PreprocessSuffix): UserFolder/qr/qrgen.c
+	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/qr_qrgen$(PreprocessSuffix) UserFolder/qr/qrgen.c
+
 $(IntermediateDirectory)/servo_test_servo_core$(ObjectSuffix): UserFolder/servo_test/servo_core.c  
 	$(CC) $(SourceSwitch) UserFolder/servo_test/servo_core.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/servo_test_servo_core$(ObjectSuffix) -MF$(IntermediateDirectory)/servo_test_servo_core$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/servo_test_servo_core$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
 Lst/servo_test_servo_core$(PreprocessSuffix): UserFolder/servo_test/servo_core.c
@@ -256,6 +276,11 @@ $(IntermediateDirectory)/servo_test_servo_dual_test$(ObjectSuffix): UserFolder/s
 	$(CC) $(SourceSwitch) UserFolder/servo_test/servo_dual_test.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/servo_test_servo_dual_test$(ObjectSuffix) -MF$(IntermediateDirectory)/servo_test_servo_dual_test$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/servo_test_servo_dual_test$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
 Lst/servo_test_servo_dual_test$(PreprocessSuffix): UserFolder/servo_test/servo_dual_test.c
 	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/servo_test_servo_dual_test$(PreprocessSuffix) UserFolder/servo_test/servo_dual_test.c
+
+$(IntermediateDirectory)/servo_test_servo_motion_test$(ObjectSuffix): UserFolder/servo_test/servo_motion_test.c  
+	$(CC) $(SourceSwitch) UserFolder/servo_test/servo_motion_test.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/servo_test_servo_motion_test$(ObjectSuffix) -MF$(IntermediateDirectory)/servo_test_servo_motion_test$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/servo_test_servo_motion_test$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
+Lst/servo_test_servo_motion_test$(PreprocessSuffix): UserFolder/servo_test/servo_motion_test.c
+	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/servo_test_servo_motion_test$(PreprocessSuffix) UserFolder/servo_test/servo_motion_test.c
 
 $(IntermediateDirectory)/servo_test_servo_mvp_test$(ObjectSuffix): UserFolder/servo_test/servo_mvp_test.c  
 	$(CC) $(SourceSwitch) UserFolder/servo_test/servo_mvp_test.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/servo_test_servo_mvp_test$(ObjectSuffix) -MF$(IntermediateDirectory)/servo_test_servo_mvp_test$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/servo_test_servo_mvp_test$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
@@ -312,6 +337,11 @@ $(IntermediateDirectory)/UserFolder_ui_app$(ObjectSuffix): UserFolder/ui_app.c
 Lst/UserFolder_ui_app$(PreprocessSuffix): UserFolder/ui_app.c
 	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/UserFolder_ui_app$(PreprocessSuffix) UserFolder/ui_app.c
 
+$(IntermediateDirectory)/UserFolder_voice_link$(ObjectSuffix): UserFolder/voice_link.c  
+	$(CC) $(SourceSwitch) UserFolder/voice_link.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/UserFolder_voice_link$(ObjectSuffix) -MF$(IntermediateDirectory)/UserFolder_voice_link$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/UserFolder_voice_link$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
+Lst/UserFolder_voice_link$(PreprocessSuffix): UserFolder/voice_link.c
+	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/UserFolder_voice_link$(PreprocessSuffix) UserFolder/voice_link.c
+
 $(IntermediateDirectory)/chip_config$(ObjectSuffix): chip_config.c  
 	$(CC) $(SourceSwitch) chip_config.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/chip_config$(ObjectSuffix) -MF$(IntermediateDirectory)/chip_config$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/chip_config$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
 Lst/chip_config$(PreprocessSuffix): chip_config.c
@@ -342,6 +372,11 @@ $(IntermediateDirectory)/src_main$(ObjectSuffix): src/main.c
 Lst/src_main$(PreprocessSuffix): src/main.c
 	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/src_main$(PreprocessSuffix) src/main.c
 
+$(IntermediateDirectory)/src_net_link$(ObjectSuffix): src/net_link.c  
+	$(CC) $(SourceSwitch) src/net_link.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/src_net_link$(ObjectSuffix) -MF$(IntermediateDirectory)/src_net_link$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/src_net_link$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
+Lst/src_net_link$(PreprocessSuffix): src/net_link.c
+	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/src_net_link$(PreprocessSuffix) src/net_link.c
+
 $(IntermediateDirectory)/src_sched_store$(ObjectSuffix): src/sched_store.c  
 	$(CC) $(SourceSwitch) src/sched_store.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/src_sched_store$(ObjectSuffix) -MF$(IntermediateDirectory)/src_sched_store$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/src_sched_store$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
 Lst/src_sched_store$(PreprocessSuffix): src/sched_store.c
@@ -367,20 +402,5 @@ $(IntermediateDirectory)/src_video$(ObjectSuffix): src/video.c
 Lst/src_video$(PreprocessSuffix): src/video.c
 	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/src_video$(PreprocessSuffix) src/video.c
 
-
-$(IntermediateDirectory)/src_net_link$(ObjectSuffix): src/net_link.c  
-	$(CC) $(SourceSwitch) src/net_link.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/src_net_link$(ObjectSuffix) -MF$(IntermediateDirectory)/src_net_link$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/src_net_link$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
-Lst/src_net_link$(PreprocessSuffix): src/net_link.c
-	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/src_net_link$(PreprocessSuffix) src/net_link.c
-
-$(IntermediateDirectory)/UserFolder_qr_qrgen$(ObjectSuffix): UserFolder/qr/qrgen.c  
-	$(CC) $(SourceSwitch) UserFolder/qr/qrgen.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/UserFolder_qr_qrgen$(ObjectSuffix) -MF$(IntermediateDirectory)/UserFolder_qr_qrgen$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/UserFolder_qr_qrgen$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
-Lst/UserFolder_qr_qrgen$(PreprocessSuffix): UserFolder/qr/qrgen.c
-	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/UserFolder_qr_qrgen$(PreprocessSuffix) UserFolder/qr/qrgen.c
-
-$(IntermediateDirectory)/UserFolder_qr_net_card$(ObjectSuffix): UserFolder/qr/net_card.c  
-	$(CC) $(SourceSwitch) UserFolder/qr/net_card.c $(CFLAGS) -MMD -MP -MT$(IntermediateDirectory)/UserFolder_qr_net_card$(ObjectSuffix) -MF$(IntermediateDirectory)/UserFolder_qr_net_card$(DependSuffix) $(ObjectSwitch)$(IntermediateDirectory)/UserFolder_qr_net_card$(ObjectSuffix) $(IncludeCPath) $(IncludePackagePath)
-Lst/UserFolder_qr_net_card$(PreprocessSuffix): UserFolder/qr/net_card.c
-	$(CC) $(CFLAGS)$(IncludeCPath) $(PreprocessOnlySwitch) $(OutputSwitch) Lst/UserFolder_qr_net_card$(PreprocessSuffix) UserFolder/qr/net_card.c
 
 -include $(IntermediateDirectory)/*$(DependSuffix)

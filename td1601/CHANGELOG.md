@@ -37,6 +37,187 @@ git show <commit>                 # 看某次改动详情
 
 ---
 
+## 2026-10-31
+
+### fix(ui): 进出卡片层画面不稳 —— 三个根因
+
+**现象**（用户反馈）：进入 UI 之后容易闪现或退出，UI 显示不稳定。
+
+**根因 1：回表情态时根本不重绘脸。**
+`face_app_set_emotion()` 走 `apply_pose()`，而它对"同名姿势"是**直接 return** 的
+（那个判断是为了挡住 emotion_fsm 每 10ms 推一次同名情绪，不能删）。于是从卡片层
+退出时如果情绪没变，一行都不画 —— 屏幕继续停在卡片那一屏上，直到下一次眨眼
+（2~5s）或微扫视（1.2~2.8s）触发重绘才"啪"地闪回脸。
+→ 新增 `face_app_repaint()`：强制整屏重画当前姿势，`back_to_face()` /
+`ui_app_force_emotion()` / `remind_close()` 三个回落点全部调用。
+
+**根因 2：卡片层的分片刷屏没被取消，与表情层的整屏渲染撞车。**
+卡片页一屏要 30 轮主循环才画完（每轮 2 片 16 行）。退出时若只画了上半屏，
+主循环会**继续**把剩下的卡片行刷上去；同时 `face_render.c` 的 `render_all()`
+会再发 `LCD_Set_Window` + `startWriteMutileData` —— CS 已拉低、窗口还是卡片那套，
+两套状态机交错 = 实机白块/色带。
+→ 新增 `ui_flush_abort()`（ui.c/ui.h），三个回落点先 abort 再 repaint。
+
+**根因 3：进卡片层那一下的"手势尾巴"被当成点击/翻页。**
+① 抬手帧（Event_ID=4）多数固件把坐标清成 0，`tp_get_gesture()` 的抬手二次判定
+拿它减起点，双指按着眼睛（x≈140）就得出 dx=-140 → 判成一次**左滑** → 卡片层
+刚进去就自己翻了一页。改用 `last_x/last_y`（按下期间最后真实坐标）算位移。
+② `g_swallow_ms` 以前只吞 UP，滑动照旧消费 → 同上。改为吞掉 500ms 内所有
+手势（DOWN/MOVE 放行）。
+
+**附带**：`g_eye_latch` —— 从卡片层回落时若手指还压在眼睛上，必须先抬手才允许
+再进卡片层。否则"按住两只眼睛看卡片 → 15s 无操作自动回落 → 550ms 后又被判成
+双指长按 → 又进卡片层"会变成死循环，屏幕上就是来回闪。
+
+**行为变更（用户 2026-10-31 决定）**
+
+1. **卡片层里串口/ESP32 的情绪命令不再抢屏**，只记下情绪，退出 UI 时再显示。
+   以前 `BAOZI_SetEmotion()` → `ui_app_force_emotion()` 无条件 `pomo_reset()` +
+   回表情态，ESP32 在操作期间持续推送状态就等于"进 UI 就被拽出来"。
+   表情态下也加了"同情绪不重绘"：ESP32 会重发同一个状态，每次都 `render_all()`
+   一屏（100~200ms 阻塞）会让屏幕一直半刷不刷。
+2. **取消 15 秒无操作自动回落**。现在退出只有右上角 X 与顶部下滑两条。
+   看日程/习惯列表不会被自己收走，也顺手消掉了"回落 → 又被双指长按拉回"的循环。
+
+### feat(ui): 进卡片层改成"双指同时长按两只眼睛"
+
+**问题**：旧规则是"表情态任意位置按住 800ms 进卡片层"。加了脸颊滑动（→ loving）
+和额头连点（→ angry）之后，脸上的空白区几乎都被这两套手势占满，长按的落点
+总在别人地盘上 —— 摸脸时手停一下就跳进 UI，误触成了常态。
+
+**做法**：只认"左右两只眼睛同时被按住 ≥550ms"。眼睛是脸上唯一"点上去什么也
+不发生"的区域（`face_zone()` 已把绘制区排除在外），两只手各压一只眼，意图明确。
+
+| 文件 | 改动 |
+|---|---|
+| `src/ICNT8952BN.c` | 报文由 10 字节（1 点）改读 18 字节（2 点）；新增触点缓存与 `tp_get_points()` / `tp_point_count()`；18 字节读失败自动退回 10 字节单点 |
+| `UserFolder/ui_app.c` | 删掉 `g_pressing/g_press_ms/g_lp_fired/LONGPRESS_MS` 那套全局长按；新增 `in_eye()` / `eye_hold_match()` / `eye_hold_tick()` / `eye_hold_reset()`，在 `ui_app_tick` 的表情态分支轮询 |
+| `UserFolder/ui_app.h` | 手势语义说明同步 |
+| `UserFolder/app_core.c`、`doc/qr_provision.md`、`MERGE_NOTES_触摸UI与行为层.md` | 注释/自检清单同步 |
+
+**四个几何与工程细节**（都是量化出来的，不是拍的）：
+
+1. **判定区是椭圆 96×88，不是圆**。眼心在 v9 半像素坐标 `x=±199/2`（视觉 140 / 340，
+   y=240）。眼睛横宽竖扁，圆形要么框不住大眼、要么把嘴的上沿圈进来。
+   `_probe/eye_zone_check.c` 扫 30 个姿势：96×88 时眼睛实心像素最低覆盖 95%，
+   且**没有任何非眼睛部件的质心落在区内**（戳嘴不会误判）；换 100×84 / 100×92
+   就出现硬错。两个椭圆中间留 8px 死带（236~244），指纹正好压中线时两边都不算。
+2. **按住阈值 550ms，低于驱动的 `TP_IDLE_RESET_MS`(600ms)**。静止按住时若 IRQ
+   被合并超过 600ms，驱动会自愈清掉触点缓存；阈值比它短就不会被自己的看门狗打断。
+3. **抬手必须吞掉 500ms**。跳转是系统自己做的，用户手指还在屏上；抬手那一下会被
+   当成点击落到卡片页（典型：把日程某行勾掉、点掉 FACES 页第一个表情）。
+4. **单点面板降级**。`g_eye_mt_ok` 只在真的凑成"左右各一只眼"时才置 1；之前
+   （或永远是单点的面板）判据退化成"单指长按任一只眼睛"。既不会出现
+   "怎么按都进不去 UI"的死局，也不会因为芯片偶发上报假第二点就永久关掉降级通道。
+
+**验证**：
+- `_probe/qr/ui_sim2.c`（真编译 `ui_app.c`/`pomo.c`）新增触点打桩与 11 项断言，
+  全 PASS：单点降级能进、中线不进、双指挤一侧不进、只按 300ms 不进、双指 700ms 进、
+  进入后抬手/点 X 被吞、600ms 后点 X 生效，原有翻页/滚动/FACES/额头/脸颊全回归。
+- `_probe/eye_zone_check.c`：30 姿势判定区覆盖表（见上）。
+- 固件 `mingw32-make -f Baozi.mk -j4` 通过，**text 105 332 / data 644 / bss 60 096**。
+- 未上板：双指是否真能上报两个点取决于面板固件，实机先看串口 `[UI] both eyes held -> cards`。
+  `TP_DEBUG` 打开可打印每帧的 `Point_num` 与第二点坐标。
+
+### fix(ui): 番茄钟子页统一到 6 个页码圆点 + 顶部时钟
+
+**问题**：卡片层是 6 页（TODAY / TIMER / HABIT / PLAY / FACES / NET），MODE 页也走了
+`ui_cards_chrome()`，但**从第 2 页进去的每一个子页**（POMODORO 个数选择、专注、
+放弃确认、完成、正计时、倒计时设置、倒计时运行）还在用旧版的 `page_dots()` ——
+屏幕上方居中 3 个小圆点，y=42，没有时钟。同一个番茄钟流程里出现两套页码，
+用户反馈"第二页的子页还是之前的三页显示逻辑"。
+
+| 文件 | 改动 |
+|---|---|
+| `UserFolder/ui_app.c` | 抽出 `ui_cards_header(page, with_close)`：时钟 + 6 个圆点（可选 X）；`ui_cards_chrome()` 改成"清屏 + 背景 + header + 卡片框" |
+| `UserFolder/ui_app.h` | 导出 `ui_cards_header()` 并写清两种情况的分工 |
+| `UserFolder/pomo.c` | 删掉 `page_dots()`；新增 `page_begin()`（清屏 + 背景 + `ui_cards_header(1,0)`），6 个 `render_xxx` 全部改调它 |
+
+**版式连带调整**（都是渲染出来量了像素行再定的，不是估的）：
+
+- 顶栏占掉 24~72（时钟）与 86~99（圆点），所有内容整体下移。
+- PSET：标题 76→100（字节 110~142）、"HOW MANY?" 116→140（144~161）、
+  两行圆 186/324 → 204/332。
+- CDSET：标题 76→100；**删掉 "SET TIME" 一行** —— 160 起就是 +/- 那行，
+  再塞一行小字会和 + 号按钮的圆边贴住；± 行 144/286 → 160/302，三列数字 202→218。
+- 专注/倒计时运行：状态标签 36→108；正计时标签同。大数字仍在 216。
+- 正计时 EXIT 从左上角 `(16,16,90,44)` 挪到 底部 `(16,385,120,60)`，
+  START/RESET 相应改为 `(156,385,148,60)` / `(316,385,120,60)` —— 左上角现在是时钟的地盘。
+- 子页**不画右上角 X**：深层页手势锁死（滑动/长按/15s 回落全部失效），
+  画一个按不动的按钮等于骗人；退出走各自的 EXIT / GIVE UP。
+
+**验证**：`_probe/qr/ui_sim2.c` 加 `deep` 模式，把 9 个番茄钟子页按点击顺序各渲染一张
+（`d0_mode … d8_cd.bmp`），逐张核对时钟/圆点/内容无重叠；`test` 模式 11 项断言仍全 PASS。
+固件 **text 105 164 / data 644 / bss 60 096**。
+
+### fix(ui): PLAY WITH ME 按了没反应 —— 请求不抢占 + 卡片层挡住反馈
+
+**现象**：PLAY 页六个按钮点下去"什么都没发生"。
+
+**先把指令链摊开**（用 `_probe/qr/ui_sim2.c` 的 `play` 模式实测，接的是真 `play_card.c`）：
+
+| 按钮 | 发出的调用 | 实际值 |
+|---|---|---|
+| NOD | `behavior_request_move(MOVE_HAPPY)` | move=1 |
+| SHAKE | `behavior_request_move(MOVE_ANGRY)` | move=4 |
+| WOW | `behavior_request_move(MOVE_SURPRISED)` | move=5 |
+| CUDDLE | `behavior_request_move(MOVE_LOVING)` | move=6 |
+| PRAISE | `behavior_stimulus(EMO_STIM_PRAISE, 100)` | stim=2 |
+| SCOLD | `behavior_stimulus(EMO_STIM_SCOLD, 100)` | stim=3 |
+
+指令本身**是对的**，`emotion_fsm_request_action()` 只是把 id 记进 `s_req_move`，
+由 `emotion_fsm_step()` 的 ②.5 块按正式播放路径播。问题出在"什么时候被消费"：
+
+1. **不抢占**：动作是阻塞播放的，一轮待机变体 18~23 秒。`fsm_tick_hook()` 原来只
+   在"抑制"和"心情变化"时打断，`s_req_move` 不在打断条件里 —— 上一轮没播完，
+   新请求就一直排队。实机上就是按了要等十几秒，看着像没反应。
+2. **TRACK 模式永久吞掉**：`emotion_fsm_step()` 的 TRACK 分支在 ②.5 之前就 return，
+   跟随模式下 UI 请求永远没人消费。
+3. **没有屏幕反馈**：卡片层把脸盖住，PRAISE/SCOLD 的瞬时表情（smug/nervous，2s）
+   根本没机会显示；四个动作按钮也只有脖子在动。
+
+| 文件 | 改动 |
+|---|---|
+| `emotion/emotion_fsm.c` | `fsm_tick_hook()` 里 `s_req_move >= 0` 就 `moves_interrupt()`（≤20ms 接上）；step 的 TRACK 分支前加"有 UI 请求就先 `mode_exit_track()`"；请求日志补 `mode/inhibit/amp` 三个现场值 |
+| `UserFolder/ui_app.c` | PLAY 页点中按钮后 `cards_close()` 回表情态（与 FACES 页同一套做法），让脸和脖子都看得见 |
+
+**排障用**：按按钮时串口会打一行
+`[fsm] ui request move=happy (mode=FSM inhibit=0 amp=1170)`，
+三个现场值分别对应三种"没反应"——`mode=TRACK`（被跟随模式吃掉）、
+`inhibit=1`（手指还没抬 / 红外判贴太近，FSM 整拍早返回）、`amp` 很低（幅度被情绪调制压小）。
+
+**验证**：`ui_sim2 test` 新增 7c/7d 两项（点 NOD 得 move=1 且回表情态、点 PRAISE 得
+stim=2 且回表情态），13 项全 PASS。固件 **text 105 300 / data 644 / bss 60 096**。
+
+### fix(behavior): 红外极性接反 —— 这就是"舵机不怎么动"的根因
+
+**现象**：舵机上电有劲，但几乎不动；PLAY 页按钮也没反应。
+
+**根因**：`behavior_ir_near()` 把红外极性写反了。
+
+- `doc/ir_tracking_plan.md` 第 10 行写得很清楚：**未遮挡 = 1，遮挡 = 0**；
+  上板验证过的 `track_dual.c` 也是这么读的（`td_read_raw()` 注释：
+  "1 = 引脚为高 = 未遮挡"）。
+- 但 `behavior.c` 里写的是"读到 1 = 检测到反射"，于是**前面什么都没有**的时候
+  三路都是高 → 判成"贴太近" → `behavior_inhibit()` 恒返回 1 →
+  `emotion_fsm_step()` 每一拍都在 ①.5 抑制 gate 早返回：不启动动作、不推进跟随、
+  只调一次 `moves_interrupt()`。舵机永远停在初始脉宽，看起来就是"上电了但不动"。
+- 同一条抑制也解释了 PLAY 页：`s_req_move` 记下了请求，但 FSM 根本走不到 ②.5
+  去消费它。
+
+| 文件 | 改动 |
+|---|---|
+| `UserFolder/behavior.c` | `behavior_ir_near()` 改成逐路读、`任一为低 = 看到反射`；文件头与函数注释的极性说明改正 |
+| `UserFolder/behavior.c` | 新增 `BEHAVIOR_IR_INHIBIT` 总开关（默认 1）；置 0 时只保留"手指按屏幕停手"这条硬约束 |
+| `UserFolder/behavior.c` | `behavior_init()` 上电打印三路电平：`[bhv] ir level L1 C1 R1 (1=未遮挡, 0=看到反射)` |
+
+**上机判据**：开机看那行 `L?  C?  R?` —— 三路都是 1 = 前面没东西，正常；
+有 0 就是那个方向有东西（或探头没接好），那一路会让机器人停手。
+
+固件 **text 105 484 / data 644 / bss 60 096**。
+
+---
+
 ## 2026-10-28
 
 > 本轮两件事：**v2.1 扫码配网**（赛题功能）+ **v2.2 时间显示改圆角数码**

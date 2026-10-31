@@ -16,10 +16,10 @@
 | 项 | 现状 |
 |---|---|
 | **定位** | TD1601 = 机器人的**行为层**（情绪 / 动作 / 传感器）；PC = **认知层**（ASR / LLM / TTS）|
-| **工程入口** | `src/main.c` —— `#define TEST_ENTRY 3` → **`emotion_fsm_run()`**（正式状态机：**舵机 + 屏幕表情 + 红外跟随**）|
-| **切换入口** | 改 `main.c` 里的 `TEST_ENTRY`：0=参数化脸 / 1=位图管线 / 2=四面体 / **3=情感状态机（当前）** |
+| **工程入口** | `src/main.c` —— `#define TEST_ENTRY 5` → **`servo_motion_test()`**（舵机运动状态测试；正式功能是 `4` → `app_run()`）|
+| **切换入口** | 改 `main.c` 里的 `TEST_ENTRY`：0=参数化脸 / 1=位图管线 / 2=四面体 / 3=纯情感状态机 / **4=合并版（UI+触摸+舵机+情感）** / **5=舵机运动状态测试（串口控制，当前）** |
 | **串口** | console `UART0` = **PA17/PA18，115200-8N1**；**输出一律纯 ASCII 英文** |
-| **舵机** | YAW = **PA29**（csi_ch 3，中位 1000 / 限位 300~1700，2026-09 由 PA0 换脚）；PITCH = **PA27**（csi_ch 2，中位 1100 / 限位 800~1600）|
+| **舵机** | YAW = **PA29**（csi_ch 3，中位 1000 / 限位 300~1700）；PITCH = **PA27**（csi_ch 2，中位 1100 / 限位 800~1600）。2026-10-31 试过收窄到 960/1440 与 1320，动作库跑不通，已回退 |
 | **红外** | L = **PB22** / C = **PB23** / R = **PB29**；未遮挡 = 1 |
 | **已实机验证** | 两路舵机 · 动作库（8 状态 × 3 变体）· 红外三路 + 状态解码 · **YAW 单轴跟随（稳定）** · LCD 480×480 |
 | **刚完成待上机** | 情感状态机（`emotion/`）· 串口交互测试入口 · 双轴跟随（PITCH 方向待整定）· 变体池全铺开 |
@@ -146,8 +146,11 @@ int16_t move_yaw_off(void); int16_t move_pitch_off(void);
 | `MOVE_BORED` | `moves_bored.c` | 3 | 歪头发呆 / 垂头发呆 / 东倒西歪 |
 | `MOVE_SLEEP` | `moves_sleep.c` | 3 | 垂头呼吸 / 侧头睡 / 浅眠 |
 
-两条经验（写动作必读）：**需求速度 ≤5us/ms + 每个极点 40ms 停顿**（否则舵机没到位就反向、摆幅被削平）；
+三条经验（写动作必读）：**需求速度 ≤5us/ms + 换向极点 15ms 停顿 + 同向多段用 `move_to_ex` 串成弧线**
+（否则舵机没到位就反向、摆幅被削平；`move_to` 两端都减速到 0，绕圈会被走成一段一段）；
 参数位置约定：**主变体①在 `moves.h`，变体②③在各自动作文件顶部**。细节见 `movements/README.md`。
+节拍：`move_line` / `move_hold` / `move_figure8` 每步按 `csi_tick_get()` **补偿**到真实 20ms
+（PWM 周期也是 20ms），所以动作时长 = 参数写的时长，不会被刷屏开销拖成忽快忽慢。
 
 ### 3.3 `emotion/` —— 情感状态机（三层，对应 PC 的 `emotion/`）
 
@@ -156,7 +159,7 @@ int16_t move_yaw_off(void); int16_t move_pitch_off(void);
 emo_id_t emo_parse(const char *name);  void emo_apply(emo_id_t e);
 emo_id_t emo_current(void);  emo_state_t emo_state(void);  void emo_reset(void);
 
-/* mood_fsm.h —— 心情状态机（ACTIVE/IDLE/BORED/SLEEPING；20s 无聊 / 30s 睡觉）*/
+/* mood_fsm.h —— 心情状态机（ACTIVE/IDLE/BORED/SLEEPING；60s 无聊 / 180s 睡觉）*/
 void mood_fsm_init(void);  void mood_fsm_touch(void);  mood_id_t mood_fsm_tick(uint32_t now_ms);
 void mood_fsm_force(mood_id_t m);  void mood_fsm_wake(void);
 mood_id_t mood_fsm_mood(void);  uint32_t mood_fsm_idle_ms(void);
@@ -296,6 +299,8 @@ TRACK:ON | TRACK:OFF                                       ← ★ 红外跟随�
 
 - 与 `Baozi_PC/communication.py` 的 `EMOTION_MAP` 一致；不认识的情绪 → 归一化为 `neutral`。
 - 收到任意 `EMO:`/`INTENT:` 都会**重置空闲计时**（打断无聊/睡眠 → ACTIVE）。
+- 触摸屏上的任何操作（点击/滑动/按住/按卡片按钮）同样重置空闲计时 ——
+  3 分钟（180s）没有任何交互才会进入 `SLEEPING`（阈值见 `emotion/mood_fsm.h`）。
 - ⚠️ 行结束只能用 **CR/LF**（空格是参数分隔符；历史上把空格当行尾，导致所有带参数命令失效）。
 
 ### 4.2 `emotion_test()` 的命令（联调主力）
@@ -307,7 +312,7 @@ TRACK:ON | TRACK:OFF                                       ← ★ 红外跟随�
 | `pause` / `center` | 暂停（保姿态）/ 回中并暂停 |
 | `gain [amp spd]` | 手动调制幅度/速度（千分比；`gain 1000 500` 放慢一倍，可诊断"没到位"）|
 | `mode [manual\|fsm]` | 手动指定动作 / 按情感状态自动选 |
-| `thr <bored_s> <sleep_s>` | 临时缩短空闲降级阈值（几秒看完 20s/30s 链路）|
+| `thr <bored_s> <sleep_s>` | 临时缩短空闲降级阈值（几秒看完 60s/180s 链路）|
 | `state` | 打印模式/动作/变体/增益/情绪/心情/空闲/阈值 |
 | `EMO:...` / 裸情绪名 | 走正式协议（自动切 fsm 模式）|
 
@@ -364,7 +369,7 @@ TRACK:ON | TRACK:OFF                                       ← ★ 红外跟随�
 | 回中震荡 | 丢失后回中，在中位两侧每 100ms 来回跳（1001↔996） | 回中必须**吸附**到中位（`track_yaw.c` / `track_dual.c` 已修） |
 | `servo_set_pulse` 内部 `stop→config→start`（历史） | 每步都关一下输出使能再打开；两路关的时刻不同 → 8 字这类两轴同时运动的动作看着"不同步/有时延"（脉冲还可能被截断） | **2026-09 改为"只写 compare"**：`servo_core_init()` 里校准 + `start` 一次，之后只写 compare_a/b（不碰 load、不关输出）|
 | 串口把**空格**当行尾（历史） | `gain 1200 1200` / `play 0 2` 等带参数命令全部失效（参数被切成独立命令）| 行结束**只能用 CR/LF**，空格是参数分隔符 |
-| 快速往复动作"没到位就反向" | HAPPY/ANGRY 实际摆幅比名义小很多 | 舵机开环，段太短会削幅：**需求速度 ≤5us/ms + 极点 `move_hold(30~60ms)`**；自诊断：`gain 1000 500` 放慢一倍再看 |
+| 快速往复动作"没到位就反向" | HAPPY/ANGRY 实际摆幅比名义小很多 | 舵机开环，段太短会削幅：**需求速度 ≤5us/ms + 极点 `move_hold(*_SETTLE_MS)`**（现值 15ms）；自诊断：`gain 1000 500` 放慢一倍再看 |
 | 舵机无位置/电流反馈 | **软件无法判堵转** | 靠电源限流 + 软限位 + 机械留余量 |
 | PA0/PA1 pad 层联动（历史） | 曾以为短路，实为**同属 `csi_ch 0`** | 换新主板后 PA1 可用，但**同 `csi_ch` 仍不能双路** |
 
@@ -377,7 +382,7 @@ TRACK:ON | TRACK:OFF                                       ← ★ 红外跟随�
 | 部分 | 位置 | 状态 |
 |---|---|---|
 | 情绪 + 连续状态 | `emotion/emotion_manager.{h,c}` | ✅ 与 PC `EmotionManager` 逐项一致（千分制）|
-| 心情状态机 | `emotion/mood_fsm.{h,c}` | ✅ ACTIVE/IDLE/BORED/SLEEPING，20s/30s 降级（非阻塞 tick）|
+| 心情状态机 | `emotion/mood_fsm.{h,c}` | ✅ ACTIVE/IDLE/BORED/SLEEPING，60s/180s 降级（真实 SysTick 时基）|
 | 编排层 | `emotion/emotion_fsm.{h,c}` | ✅ `EMO:`/`INTENT:` 解析 + (mood,emo)→动作 + 调制算法 |
 | 动作执行 | `movements/` | ✅ 9 状态 · 24 变体（随机不重复）|
 | ~~旧 `test/emotion.c`~~ | — | **已删除**（枚举/串口切换升级为 `emotion/`；动作表迁入 `movements/`）|
@@ -445,7 +450,8 @@ track_dual_exit();                        /* ④ 退：两轴回中位，交还�
 
 ### 7.4 输入 / 输出现状
 
-- **输入**：串口 `EMO:` / `INTENT:` / **`TRACK:ON|OFF`**（均已实现）、触摸（未）、IMU 敲击（未）
+- **输入**：串口 `EMO:` / `INTENT:` / **`TRACK:ON|OFF`**（均已实现）、触摸（已：任何触摸都算一次交互，
+  刷新"3 分钟没互动才睡"的计时）、IMU 敲击（未）
 - **输出**：动作库（舵机，已实现）· **屏幕表情 `anim/face_ui`（已接入：情绪/心情 → 表情，含过渡/眨眼/视线）**·
   LED / 语调（未）
 - **总线仲裁（重要）**：屏幕 DMA 与舵机写 PWM 会抢 AHB → 已用
@@ -479,7 +485,7 @@ track_dual_exit();                        /* ④ 退：两轴回中位，交还�
 **阶段 4 · PC 联调（`emotion_fsm_run()` + PC）**
 12. `main()` 改调 `emotion_fsm_run()` 烧录；PC 侧 `python main.py --serial COMx`。
 13. PC 说一句话 → 观察 `[fsm] emotion=... mood=... -> move=... (amp/spd)` 与舵机动作是否对应。
-14. 断线/超时：板子 20s→无聊、30s→睡觉；PC 再下发 `EMO:` 应立即唤醒并换动作。
+14. 断线/超时：板子 60s→无聊、180s→睡觉（触摸屏上任何操作都会重置该计时）；PC 再下发 `EMO:` 应立即唤醒并换动作。
 
 ---
 
@@ -526,6 +532,7 @@ track_dual_exit();                        /* ④ 退：两轴回中位，交还�
 | **表情动作交接** | `../anim/HANDOVER.md` | **pose = 模型 + 动作**：数据通路、加新表情三步、硬约束与坑、**已知问题（抚摸表情被情绪同步抢走）**、下一步候选 |
 | **表情模拟器**（PC 端，不需烧录）| `D:\Baozi\_probe\face_sim.html` | 双击即用：13 个姿势点按钮就切，含动作轨迹曲线；数据由 `face_sim_build.ps1` 从 C 抽取，`node face_sim_test.js` 自测与 C 是否一致 |
 | 表情数据自检 | `D:\Baozi\_probe\check_actions.ps1` | pose→model/action 引用、视线幅度、滑行速度、时间轴轨迹 |
+| **一键演示** | `doc/demo_show.md` | DEMO 页 + 三端播报链路：演示脚本表、串口协议（DEMO:/DEMORUN/DEMOWAIT）、降级规则、PC 侧命令与坑 |
 
 ---
 
