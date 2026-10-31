@@ -119,6 +119,13 @@ _CTRL_FOR_PREFIX = {
     # 复用了 CTRL_TD_TEXT（"任意一行，原样转发给 TD1601"），所以 ESP32 侧
     # 一行代码都不用改；TD1601 只是在 emotion_fsm_feed_line() 里多认一个前缀。
     "TRACK": 0x0B,        # CTRL_TD_TEXT
+    # QR:<payload> / NET:<state>[;<ssid>[;<ip>]] —— 配网二维码与状态。
+    # ★ 曾经漏在这里：main.py 里就算有人调 send_line("QR:...")，也会在下面的
+    #   "未知命令前缀，已忽略" 处被静静吃掉，屏幕永远停在 net_card.c 的
+    #   "waiting for network"（TD1601 侧其实早就支持 QR:/NET: 了）。
+    #   同样是 CTRL_TD_TEXT，ESP32 原样转发 -> TD1601 的 src/net_link.c 解析。
+    "QR": 0x0B,
+    "NET": 0x0B,
 }
 
 

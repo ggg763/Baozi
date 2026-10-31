@@ -117,6 +117,8 @@ def _parse_extra(argv):
                          "默认由 config.json 的 app_enabled 决定")
     ap.add_argument("--no-app", action="store_true",
                     help="关闭 app 整合层（只跑语音/视觉/情感）")
+    ap.add_argument("--no-qr", action="store_true",
+                    help="开机不把配网二维码推到 TD1601 屏幕（默认会推一次）")
     extra, rest = ap.parse_known_args(argv)
     return extra, rest
 
@@ -165,6 +167,119 @@ def _yolo_once(cfg, frame_provider=None) -> int:
     return 0
 
 
+def _start_boot_greeting(cfg, srv, pipe) -> None:
+    """接通 ESP32 后，放一次开机自我介绍。
+
+    三个作用：
+      1. **热身** —— 代替原来那句合成完就扔掉的"预热"；
+      2. **自检** —— 听到了就说明 PC -> ESP32 -> 喇叭 整条音频链路是通的，
+         比事后猜"为什么没声音"强得多；
+      3. 语音用的是**预生成 WAV**（assets/boot_hello.wav），纯本地读盘，
+         和 TTS / 网络完全解耦 —— 开机时网络没起来也照样能说。
+
+    独立线程 + 轮询连接状态：ESP32 可能比 PC 晚几十秒上电，
+    这里最多等 3 分钟，等不到就安静放弃（不阻塞、不报错）。
+    """
+
+    def _run() -> None:
+        if not getattr(cfg, "boot_voice_enabled", True):
+            return
+        try:
+            from boot_voice import load_boot_voice
+            pcm = load_boot_voice()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[boot] 开机语音加载失败（跳过）：{exc!r}")
+            return
+        if pcm is None:
+            print("[boot] 没有 assets/boot_hello.wav，开机不出声"
+                  "（跑 python boot_voice.py 生成一次）")
+            return
+
+        deadline = time.monotonic() + 180.0
+        while time.monotonic() < deadline:
+            if srv.connected:
+                break
+            time.sleep(0.5)
+        else:
+            print("[boot] 180s 内没等到 ESP32，开机语音跳过")
+            return
+
+        time.sleep(1.0)          # 给握手和播放缓冲一点稳定时间
+        try:
+            ok = pipe.say_pcm(pcm, "开机语音")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[boot] 开机语音播放失败（忽略）：{exc!r}")
+            return
+        if ok:
+            print(f"[boot] 开机问候已送出（{len(pcm) / 16000:.1f}s）", flush=True)
+        else:
+            print("[boot] 开机问候没送出去（链路忙或没有播放通路）", flush=True)
+
+    threading.Thread(target=_run, name="boot-greeting", daemon=True).start()
+
+
+def _start_provision_qr(cfg, srv, td_link) -> None:
+    """接通 ESP32 后，把本机 WiFi 的配网二维码推到 TD1601 屏幕（NET 页）一次。
+
+    为什么需要它：TD1601 的 NET 页只要一次都没收到过 `QR:` 行，就永远显示
+    `waiting for network / from ESP32 over UART3`（见 UserFolder/qr/net_card.c
+    的 !s_has_qr 分支）。而 PC 侧过去**根本没人发** —— 屏上那句话其实是在等
+    一件没有实现的事。
+
+    链路和 TRACK:ON 完全一样：send_line -> CTRL_TD_TEXT -> ESP32 原样转发 ->
+    TD1601 的 PB18，所以 ESP32 固件一行都不用改。
+
+    只推一次、不周期重推：板子每收到一条 QR: 都会 ui_app_show_net() 把屏幕
+    拉回 NET 页（那是为了让人举着手机扫），而 NET 页按设计不自动回落 ——
+    周期重推会让人正常聊天时被反复抢屏。
+
+    独立线程 + 轮询连接状态，和 _start_boot_greeting 同一套路：ESP32 可能比
+    PC 晚几十秒上电，最多等 3 分钟，等不到就安静放弃。
+    """
+
+    def _run() -> None:
+        if not getattr(cfg, "provision_qr_enabled", True):
+            return
+
+        deadline = time.monotonic() + 180.0
+        while time.monotonic() < deadline:
+            if srv.connected:
+                break
+            time.sleep(0.5)
+        else:
+            print("[qr] 180s 内没等到 ESP32，配网二维码这次不推了")
+            return
+
+        # 等板子把 ui_app / net_link 初始化完再推：net_link_init() 里会
+        # net_card_reset()，推早了会被那次 reset 清掉，屏幕又回到 waiting。
+        time.sleep(3.0)
+
+        try:
+            from wifi_cred import local_provision_lines
+
+            lines, ssid, has_pwd = local_provision_lines()
+        except Exception as exc:                             # noqa: BLE001
+            print(f"[qr] 配网二维码跳过：{exc}")
+            return
+
+        try:
+            for line in lines:
+                td_link.send_line(line)
+                time.sleep(0.25)      # 两行别粘成一行（板子按行解析）
+        except Exception as exc:                             # noqa: BLE001
+            print(f"[qr] 推到屏幕失败（忽略）：{exc!r}")
+            return
+
+        print(f"[qr] 配网码已推给屏幕：SSID={ssid!r}"
+              f"（{'带口令' if has_pwd else '无口令'}，{len(lines)} 行）。"
+              "屏上应停在 NET 页的二维码上，点一下可放大成全屏码。", flush=True)
+        print("[qr] 如果屏上还是 waiting for network，看板子 UART0 日志里有没有 "
+              "[NET] qr set（有=编码成功，是显示/跳页问题）/ [NET] qr rejected"
+              "（编码失败）/ 什么都没有（UART3 那一段没传到）", flush=True)
+
+    threading.Thread(target=_run, name="provision-qr", daemon=True).start()
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
@@ -183,6 +298,10 @@ def main(argv=None) -> int:
         cfg.app_enabled = False
     elif extra.with_app:
         cfg.app_enabled = True
+
+    # 开机自动推配网二维码（连上 ESP32 后推一次，见 _start_provision_qr）
+    if getattr(extra, "no_qr", False):
+        cfg.provision_qr_enabled = False
 
     # 情感下行后端（关闭时退化为 sim，只打印）
     td_backend = cfg.td1601_backend if cfg.td1601_enabled else "sim"
@@ -214,6 +333,8 @@ def main(argv=None) -> int:
           + (f"  串口={cfg.td1601_port}" if td_backend == "serial" else
              "  (经 ESP32 转发 -> TD1601 PB18)" if td_backend == "esp32" else
              "  (模拟，只打印 EMO:/INTENT:)"))
+    print(f"  配网  {'开' if getattr(cfg, 'provision_qr_enabled', True) else '关'}"
+          "（连上 ESP32 后把本机 WiFi 的二维码推到屏幕 NET 页，--no-qr 可关）")
     if cfg.app_enabled:
         print(f"  App   {'开' if cfg.app_enabled else '关'}"
               f"  后端={cfg.app_backend_host}:{cfg.app_backend_port}"
@@ -447,8 +568,16 @@ def main(argv=None) -> int:
         if cfg.app_enabled:
             from app.service import AppService
 
-            app_svc = AppService(cfg, speaker=pipe.say)
+            # say_pcm=pipe.say_pcm：一键演示的播报走这条（预合成 WAV -> ESP32 -> 喇叭，
+            # 不经过 TTS）。没有它演示照样能跑，只是每一步没有解说。
+            app_svc = AppService(cfg, speaker=pipe.say, say_pcm=pipe.say_pcm)
             app_svc.start()
+
+        # 开机自我介绍：等 ESP32 连上来就放一次（热身 + 音频链路自检）
+        _start_boot_greeting(cfg, srv, pipe)
+
+        # 配网二维码：连上后把本机 WiFi 的 WIFI: 码推到屏幕 NET 页（--no-qr 关）
+        _start_provision_qr(cfg, srv, td_link)
 
         print("[link] 就绪。语音：对着麦克风说话（说「拍照」可存图）；"
               "视觉：问「你看到了什么」即从串口取一帧并描述；"
